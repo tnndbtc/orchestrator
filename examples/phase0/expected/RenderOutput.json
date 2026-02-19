@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0.0",
+  "output_id": "output-phase0-demo-example",
+  "project_id": "phase0-demo",
+  "plan_ref": "plan-phase0-demo-example",
+  "video_path": "placeholder://video/phase0-demo-run-example.mp4",
+  "captions_path": "placeholder://captions/phase0-demo-run-example.srt",
+  "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "duration_sec": 17.2
+}

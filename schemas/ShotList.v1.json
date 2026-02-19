@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ShotList",
+  "type": "object",
+  "required": ["schema_version", "shotlist_id", "project_id", "script_ref", "timing_lock_hash", "shots"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "shotlist_id": {"type": "string"},
+    "project_id": {"type": "string"},
+    "script_ref": {"type": "string"},
+    "timing_lock_hash": {"type": "string"},
+    "shots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["shot_id", "scene_id", "duration_sec", "camera_framing"],
+        "additionalProperties": true,
+        "properties": {
+          "shot_id": {"type": "string"},
+          "scene_id": {"type": "string"},
+          "duration_sec": {"type": "number", "minimum": 0},
+          "camera_framing": {"type": "string"}
+        }
+      }
+    }
+  }
+}

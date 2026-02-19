@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RenderOutput",
+  "type": "object",
+  "required": ["schema_version", "output_id", "project_id", "plan_ref", "video_path", "captions_path", "content_hash"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "output_id": {"type": "string"},
+    "project_id": {"type": "string"},
+    "plan_ref": {"type": "string"},
+    "video_path": {"type": "string"},
+    "captions_path": {"type": "string"},
+    "content_hash": {"type": "string"}
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0.0",
+  "script_id": "script-phase0-demo-example",
+  "project_id": "phase0-demo",
+  "title": "The Lost Signal - Episode 1",
+  "genre": "sci-fi",
+  "scenes": [
+    {
+      "scene_id": "scene-001",
+      "location": "INT. COMMAND CENTER",
+      "time_of_day": "NIGHT",
+      "actions": [
+        {"type": "action", "text": "The room hums with the glow of monitors."},
+        {"type": "dialogue", "character": "COMMANDER", "text": "We have lost contact with the probe."},
+        {"type": "dialogue", "character": "ANALYST", "text": "The signal disappeared twelve minutes ago."}
+      ]
+    },
+    {
+      "scene_id": "scene-002",
+      "location": "EXT. LAUNCH PAD",
+      "time_of_day": "DAWN",
+      "actions": [
+        {"type": "action", "text": "A lone figure walks toward the rocket."},
+        {"type": "dialogue", "character": "COMMANDER", "text": "Prepare for immediate launch."}
+      ]
+    }
+  ]
+}

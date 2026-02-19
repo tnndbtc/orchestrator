@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "shotlist_id": "shotlist-phase0-demo-example",
+  "project_id": "phase0-demo",
+  "script_ref": "script-phase0-demo-example",
+  "timing_lock_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "shots": [
+    {"shot_id": "scene-001-shot-001", "scene_id": "scene-001", "duration_sec": 5.6, "camera_framing": "wide"},
+    {"shot_id": "scene-001-shot-002", "scene_id": "scene-001", "duration_sec": 5.6, "camera_framing": "medium_close_up"},
+    {"shot_id": "scene-002-shot-001", "scene_id": "scene-002", "duration_sec": 3.0, "camera_framing": "wide"},
+    {"shot_id": "scene-002-shot-002", "scene_id": "scene-002", "duration_sec": 3.0, "camera_framing": "medium_close_up"}
+  ]
+}

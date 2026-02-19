@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orchestrator"
+version = "0.1.0"
+description = "Orchestrator CLI + Artifact Registry (Phase 0 Workstream A)"
+requires-python = ">=3.12"
+dependencies = [
+    "click==8.1.7",
+    "jsonschema==4.23.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+]
+
+[project.scripts]
+orchestrator = "orchestrator.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["orchestrator*"]

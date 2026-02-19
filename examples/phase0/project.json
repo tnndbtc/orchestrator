@@ -1,0 +1,13 @@
+{
+  "id": "phase0-demo",
+  "title": "The Lost Signal - Episode 1",
+  "genre": "sci-fi",
+  "visual_style": "cinematic",
+  "target_duration": 60,
+  "render_profiles": ["preview_local"],
+  "continuity_mode": "sequential",
+  "cost_policy": {
+    "max_budget_usd": 0.0,
+    "external_ai": "disabled"
+  }
+}
