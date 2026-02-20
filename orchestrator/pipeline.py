@@ -95,11 +95,27 @@ def _enforce_schema_metadata(run_dir: Path, file_path: Path) -> None:
         raise _SchemaMissingError(f"ERROR: missing schema metadata for {rel}")
 
 
-def _check_canon_decision(run_dir: Path) -> None:
+def _check_canon_decision(
+    run_dir: Path,
+    project_path: str = "",
+    run_id: str = "",
+) -> None:
     """Raise _ContinuationMissing or _ContinuationRejected based on CanonDecision.json."""
     canon_file = run_dir / "CanonDecision.json"
     if not canon_file.exists():
-        raise _ContinuationMissing("ERROR: continuation decision missing")
+        resume_cmd = (
+            f"orchestrator run --project {project_path} --run-id {run_id} --from-stage 5"
+            if project_path and run_id
+            else "orchestrator run --project <project> --run-id <run-id> --from-stage 5"
+        )
+        raise _ContinuationMissing(
+            "ERROR: continuation decision missing\n"
+            f"  1. Create: {canon_file}\n"
+            "     Contents:\n"
+            '       {"schema_id": "CanonDecision", "schema_version": "1.0.0",\n'
+            '        "decision": "allow", "decision_id": "<your-decision-id>"}\n'
+            f"  2. Resume: {resume_cmd}"
+        )
     try:
         data = json.loads(canon_file.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
@@ -267,7 +283,7 @@ class PipelineRunner:
             # CanonDecision gate — fires only when stage5 is about to run
             if stage_name == "stage5_render_preview" and should_run:
                 try:
-                    _check_canon_decision(run_dir)
+                    _check_canon_decision(run_dir, self.project_path, self.run_id)
                 except _GATE_EXCEPTIONS as exc:
                     msg = str(exc)
                     print(msg, flush=True)
