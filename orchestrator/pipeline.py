@@ -42,6 +42,25 @@ def compute_run_id(project_config: dict) -> str:
     return "run-" + hashlib.sha256(content).hexdigest()[:12]
 
 
+def _build_file_entry(run_dir: Path, file_path: Path) -> dict:
+    """Build a RunIndex file entry with sha256 + optional schema metadata."""
+    rel_path = str(file_path.relative_to(run_dir))
+    entry: dict = {"path": rel_path, "sha256": hash_file_bytes(file_path)}
+    try:
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        data = {}
+    schema_version = data.get("schema_version")
+    schema_id = data.get("schema_id")
+    if schema_version is None:
+        print(f"WARNING: missing schema metadata for {rel_path}", flush=True)
+    else:
+        entry["schema_version"] = schema_version
+        if schema_id is not None:
+            entry["schema_id"] = schema_id
+    return entry
+
+
 def write_run_index(run_dir: Path, stage_results: list[dict]) -> dict:
     """Compute and write RunIndex.json into run_dir after a completed run.
 
@@ -60,20 +79,20 @@ def write_run_index(run_dir: Path, stage_results: list[dict]) -> dict:
         artifact_file = run_dir / f"{artifact_type}.json"
         outputs = []
         if artifact_file.exists():
-            outputs.append({
-                "path": str(artifact_file.relative_to(run_dir)),
-                "sha256": hash_file_bytes(artifact_file),
-            })
+            outputs.append(_build_file_entry(run_dir, artifact_file))
+
+        # CanonDecision: append to stage1_generate_script outputs if present
+        if stage_name == "stage1_generate_script":
+            canon_file = run_dir / "CanonDecision.json"
+            if canon_file.exists():
+                outputs.append(_build_file_entry(run_dir, canon_file))
 
         # inputs — sorted for determinism within each stage
         inputs = []
         for itype in sorted(STAGE_INPUTS.get(stage_name, [])):
             ifile = run_dir / f"{itype}.json"
             if ifile.exists():
-                inputs.append({
-                    "path": str(ifile.relative_to(run_dir)),
-                    "sha256": hash_file_bytes(ifile),
-                })
+                inputs.append(_build_file_entry(run_dir, ifile))
 
         stages_index.append({"name": stage_name, "inputs": inputs, "outputs": outputs})
 
@@ -88,7 +107,7 @@ def write_run_index(run_dir: Path, stage_results: list[dict]) -> dict:
 
     run_index: dict = {
         "schema_id": "RunIndex",
-        "schema_version": "0.0.1",
+        "schema_version": "0.0.2",
         "run_id": index_run_id,
         "pipeline_version": "phase0",
         "stages": stages_index,

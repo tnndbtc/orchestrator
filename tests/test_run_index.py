@@ -144,7 +144,7 @@ class TestWriteRunIndex:
         _, run_dir = _run_full_pipeline(tmp_path)
         idx = json.loads((run_dir / "RunIndex.json").read_text(encoding="utf-8"))
         assert idx["schema_id"] == "RunIndex"
-        assert idx["schema_version"] == "0.0.1"
+        assert idx["schema_version"] == "0.0.2"
         assert "run_id" in idx
         assert len(idx["run_id"]) == 64, "run_id should be a 64-char hex digest"
         assert idx["pipeline_version"] == "phase0"
@@ -341,3 +341,98 @@ class TestReplayCommand:
         # File should have been re-created by the re-run stage
         assert corrupt_file.exists(), "ShotList.json should be re-created after replay"
         assert meta_file.exists(), "ShotList.meta.json should be re-created after replay"
+
+
+# ===========================================================================
+# TestWave2
+# ===========================================================================
+
+_CANON_DECISION: dict = {
+    "schema_version": "1.0.0",
+    "schema_id": "CanonDecision",
+    "decision_id": "test-canon-01",
+}
+
+
+class TestWave2:
+    def test_schema_version_in_entries(self, tmp_path, mock_stage5):
+        """Every output entry in RunIndex has schema_version == '1.0.0'."""
+        _, run_dir = _run_full_pipeline(tmp_path)
+        idx = json.loads((run_dir / "RunIndex.json").read_text(encoding="utf-8"))
+        for stage in idx["stages"]:
+            for entry in stage["outputs"]:
+                assert "schema_version" in entry, (
+                    f"Output entry {entry['path']} is missing schema_version"
+                )
+                assert entry["schema_version"] == "1.0.0", (
+                    f"Expected schema_version='1.0.0' in {entry['path']}, "
+                    f"got {entry['schema_version']!r}"
+                )
+
+    def test_no_schema_id_for_regular_artifacts(self, tmp_path, mock_stage5):
+        """Regular artifacts lack schema_id; assert key absent from their entries."""
+        _, run_dir = _run_full_pipeline(tmp_path)
+        idx = json.loads((run_dir / "RunIndex.json").read_text(encoding="utf-8"))
+        for stage in idx["stages"]:
+            for entry in stage["outputs"]:
+                # Skip CanonDecision.json which intentionally carries schema_id
+                if "CanonDecision" in entry["path"]:
+                    continue
+                assert "schema_id" not in entry, (
+                    f"Regular artifact {entry['path']} should not have schema_id in entry"
+                )
+
+    def test_canon_decision_recorded(self, tmp_path, mock_stage5):
+        """CanonDecision.json in run_dir appears in stage1 outputs with correct fields."""
+        run_id = compute_run_id(PROJECT_CONFIG)
+        pre_run_dir = tmp_path / PROJECT_CONFIG["id"] / run_id
+        pre_run_dir.mkdir(parents=True, exist_ok=True)
+        canon_file = pre_run_dir / "CanonDecision.json"
+        canon_file.write_text(json.dumps(_CANON_DECISION), encoding="utf-8")
+        expected_sha = hash_file_bytes(canon_file)
+
+        _, run_dir = _run_full_pipeline(tmp_path)
+        idx = json.loads((run_dir / "RunIndex.json").read_text(encoding="utf-8"))
+        stage1 = next(s for s in idx["stages"] if s["name"] == "stage1_generate_script")
+        canon_entries = [e for e in stage1["outputs"] if "CanonDecision" in e["path"]]
+        assert len(canon_entries) == 1, (
+            "CanonDecision.json should appear exactly once in stage1 outputs"
+        )
+        ce = canon_entries[0]
+        assert ce["sha256"] == expected_sha
+        assert ce["schema_version"] == "1.0.0"
+        assert ce["schema_id"] == "CanonDecision"
+
+    def test_byte_identical_with_canon_decision(self, tmp_path, mock_stage5):
+        """Two runs with CanonDecision.json produce byte-identical RunIndex.json."""
+        run_id = compute_run_id(PROJECT_CONFIG)
+        pre_run_dir = tmp_path / PROJECT_CONFIG["id"] / run_id
+        pre_run_dir.mkdir(parents=True, exist_ok=True)
+        (pre_run_dir / "CanonDecision.json").write_text(
+            json.dumps(_CANON_DECISION), encoding="utf-8"
+        )
+
+        _, run_dir = _run_full_pipeline(tmp_path)
+        bytes1 = (run_dir / "RunIndex.json").read_bytes()
+
+        _run_full_pipeline(tmp_path, force=True)
+        bytes2 = (run_dir / "RunIndex.json").read_bytes()
+
+        assert bytes1 == bytes2, (
+            "RunIndex.json must be byte-identical across two identical runs"
+        )
+
+    def test_warning_on_missing_schema_metadata(self, tmp_path, capsys):
+        """write_run_index emits WARNING to stdout for artifacts missing schema_version."""
+        run_dir = tmp_path / "warn_run"
+        run_dir.mkdir()
+        bare_file = run_dir / "Bare.json"
+        bare_file.write_text('{"some_field": "value"}', encoding="utf-8")
+
+        write_run_index(
+            run_dir,
+            [{"name": "stage1_generate_script", "artifact_type": "Bare"}],
+        )
+
+        captured = capsys.readouterr()
+        assert "WARNING: missing schema metadata for" in captured.out
