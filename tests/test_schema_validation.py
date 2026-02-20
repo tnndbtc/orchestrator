@@ -32,15 +32,23 @@ def make_valid_shotlist() -> dict:
     return {
         "schema_version": "1.0.0",
         "shotlist_id": "test-shotlist-001",
-        "project_id": "test-project",
-        "script_ref": "test-script-001",
+        "script_id": "test-script-001",
+        "created_at": "1970-01-01T00:00:00Z",
         "timing_lock_hash": "a" * 64,
+        "total_duration_sec": 3.5,
         "shots": [
             {
                 "shot_id": "scene-001-shot-001",
                 "scene_id": "scene-001",
                 "duration_sec": 3.5,
                 "camera_framing": "wide",
+                "camera_movement": "STATIC",
+                "audio_intent": {
+                    "vo_speaker_id": None,
+                    "vo_text": None,
+                    "sfx_tags": [],
+                    "music_mood": None,
+                },
             }
         ],
     }
@@ -146,6 +154,18 @@ class TestShotList:
     def test_invalid_shotlist_missing_required(self):
         data = make_valid_shotlist()
         del data["shotlist_id"]
+        with pytest.raises(jsonschema.ValidationError):
+            validate_artifact(data, "ShotList")
+
+    def test_invalid_shotlist_missing_created_at(self):
+        data = make_valid_shotlist()
+        del data["created_at"]
+        with pytest.raises(jsonschema.ValidationError):
+            validate_artifact(data, "ShotList")
+
+    def test_invalid_shotlist_missing_total_duration_sec(self):
+        data = make_valid_shotlist()
+        del data["total_duration_sec"]
         with pytest.raises(jsonschema.ValidationError):
             validate_artifact(data, "ShotList")
 

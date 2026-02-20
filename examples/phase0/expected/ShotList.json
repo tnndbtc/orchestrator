@@ -1,13 +1,74 @@
 {
   "schema_version": "1.0.0",
   "shotlist_id": "shotlist-phase0-demo-example",
-  "project_id": "phase0-demo",
-  "script_ref": "script-phase0-demo-example",
+  "script_id": "script-phase0-demo-example",
+  "created_at": "1970-01-01T00:00:00Z",
   "timing_lock_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "total_duration_sec": 17.2,
   "shots": [
-    {"shot_id": "scene-001-shot-001", "scene_id": "scene-001", "duration_sec": 5.6, "camera_framing": "wide"},
-    {"shot_id": "scene-001-shot-002", "scene_id": "scene-001", "duration_sec": 5.6, "camera_framing": "medium_close_up"},
-    {"shot_id": "scene-002-shot-001", "scene_id": "scene-002", "duration_sec": 3.0, "camera_framing": "wide"},
-    {"shot_id": "scene-002-shot-002", "scene_id": "scene-002", "duration_sec": 3.0, "camera_framing": "medium_close_up"}
+    {
+      "shot_id": "scene-001-shot-001",
+      "scene_id": "scene-001",
+      "duration_sec": 5.6,
+      "camera_framing": "wide",
+      "camera_movement": "STATIC",
+      "audio_intent": {
+        "vo_speaker_id": "commander",
+        "vo_text": "We have lost contact with the probe.",
+        "sfx_tags": [],
+        "music_mood": null
+      },
+      "characters": [
+        {"character_id": "commander", "expression": null, "pose": null}
+      ]
+    },
+    {
+      "shot_id": "scene-001-shot-002",
+      "scene_id": "scene-001",
+      "duration_sec": 5.6,
+      "camera_framing": "medium_close_up",
+      "camera_movement": "STATIC",
+      "audio_intent": {
+        "vo_speaker_id": "commander",
+        "vo_text": "We have lost contact with the probe.",
+        "sfx_tags": [],
+        "music_mood": null
+      },
+      "characters": [
+        {"character_id": "commander", "expression": null, "pose": null}
+      ]
+    },
+    {
+      "shot_id": "scene-002-shot-001",
+      "scene_id": "scene-002",
+      "duration_sec": 3.0,
+      "camera_framing": "wide",
+      "camera_movement": "STATIC",
+      "audio_intent": {
+        "vo_speaker_id": "commander",
+        "vo_text": "Prepare for immediate launch.",
+        "sfx_tags": [],
+        "music_mood": null
+      },
+      "characters": [
+        {"character_id": "commander", "expression": null, "pose": null}
+      ]
+    },
+    {
+      "shot_id": "scene-002-shot-002",
+      "scene_id": "scene-002",
+      "duration_sec": 3.0,
+      "camera_framing": "medium_close_up",
+      "camera_movement": "STATIC",
+      "audio_intent": {
+        "vo_speaker_id": "commander",
+        "vo_text": "Prepare for immediate launch.",
+        "sfx_tags": [],
+        "music_mood": null
+      },
+      "characters": [
+        {"character_id": "commander", "expression": null, "pose": null}
+      ]
+    }
   ]
 }
