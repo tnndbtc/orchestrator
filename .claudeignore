@@ -1,0 +1,8 @@
+.git
+tests
+tests/__pycache__
+orchestrator/__pycache__
+.venv
+orchestrator.egg-info
+*.log
+*.tmp

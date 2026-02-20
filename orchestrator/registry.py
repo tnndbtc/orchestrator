@@ -29,6 +29,9 @@ class ArtifactRegistry:
     # Path helpers
     # ------------------------------------------------------------------
 
+    def run_dir(self, project_id: str, run_id: str) -> Path:
+        return self.base_dir / project_id / run_id
+
     def artifact_path(self, project_id: str, run_id: str, artifact_type: str) -> Path:
         """Return the path to <artifact_type>.json for this run."""
         return self.base_dir / project_id / run_id / f"{artifact_type}.json"

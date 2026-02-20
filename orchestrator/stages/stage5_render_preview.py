@@ -1,57 +1,72 @@
-"""Stage 5: Stub render — produces a RenderOutput with placeholder paths."""
+# stage5_render_preview.py
+import json, os, subprocess, sys
+from pathlib import Path
 
-from ..registry import ArtifactRegistry
-from ..utils.hashing import hash_artifact
+
+def _uri_to_path(uri: str) -> Path | None:
+    """Return Path for a file:// URI, or None for any other scheme."""
+    if uri.startswith("file://"):
+        return Path(uri[len("file://"):])
+    return None
 
 
-def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
-    """Produce a placeholder RenderOutput.
+def run(project_config, run_id, registry):
+    pid = project_config["id"]
 
-    Reads:  RenderPlan.json, ShotList.json (to sum shot durations)
-    Writes: RenderOutput.json
+    # 1) Resolve renderer from env var
+    video_repo = os.environ.get("VIDEO_RENDERER_REPO")
+    if not video_repo:
+        raise EnvironmentError(
+            "Environment variable VIDEO_RENDERER_REPO is not set. "
+            "Set it to the root of the video renderer repository, e.g.:\n"
+            "  export VIDEO_RENDERER_REPO=/path/to/video"
+        )
+    renderer        = Path(video_repo) / "scripts" / "render_from_orchestrator.py"
+    renderer_python = os.environ.get("VIDEO_RENDERER_PYTHON", sys.executable)
 
-    video_path   = placeholder://video/<project_id>-<run_id>.mp4
-    captions_path = placeholder://captions/<project_id>-<run_id>.srt
-    content_hash  = hash_artifact({"captions_path": ..., "video_path": ...})
-    duration_sec  = sum of all shot duration_sec from ShotList
+    manifest_path = registry.artifact_path(pid, run_id, "AssetManifest")
+    plan_path     = registry.artifact_path(pid, run_id, "RenderPlan")
+    out_dir       = Path(registry.run_dir(pid, run_id)) / "render_preview"
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    Returns the artifact dict.
-    """
-    project_id = project_config["id"]
-    render_plan = registry.read_artifact(project_id, run_id, "RenderPlan")
-    shotlist = registry.read_artifact(project_id, run_id, "ShotList")
-
-    total_duration_sec: float = sum(
-        shot.get("duration_sec", 0.0) for shot in shotlist.get("shots", [])
+    # 2) Invoke renderer; capture stdout JSON
+    result = subprocess.run(
+        [renderer_python, str(renderer),
+         "--asset-manifest", str(manifest_path),
+         "--render-plan",    str(plan_path),
+         "--out-dir",        str(out_dir)],
+        capture_output=True,
     )
+    if result.returncode != 0:
+        stderr_snippet = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(
+            f"Renderer exited with code {result.returncode}.\nstderr:\n{stderr_snippet}"
+        )
 
-    video_path = f"placeholder://video/{project_id}-{run_id}.mp4"
-    captions_path = f"placeholder://captions/{project_id}-{run_id}.srt"
-    content_hash = hash_artifact(
-        {"captions_path": captions_path, "video_path": video_path}
-    )
+    # 3) Parse stdout — renderer is source of truth, no modifications
+    try:
+        ro = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Renderer stdout is not valid JSON: {exc}\n"
+            f"stdout (first 500 chars):\n"
+            f"{result.stdout.decode('utf-8', errors='replace')[:500]}"
+        ) from exc
 
-    render_output: dict = {
-        "schema_version": "1.0.0",
-        "output_id": f"output-{project_id}-{run_id[:8]}",
-        "project_id": project_id,
-        "plan_ref": render_plan["plan_id"],
-        "video_path": video_path,
-        "captions_path": captions_path,
-        "content_hash": content_hash,
-        "duration_sec": total_duration_sec,
-    }
-
+    # 4) Write artifact (validates against schema)
     registry.write_artifact(
-        project_id,
-        run_id,
-        "RenderOutput",
-        render_output,
-        parent_refs=[render_plan["plan_id"]],
-        creation_params={
-            "project_id": project_id,
-            "run_id": run_id,
-            "stage": "stage5_render_preview",
-        },
+        pid, run_id, "RenderOutput", ro,
+        parent_refs=[],
+        creation_params={"project_id": pid, "run_id": run_id, "stage": "stage5_render_preview"},
     )
-    return render_output
+
+    # 5) Verify file:// URIs actually exist on disk
+    for field in ("video_uri", "captions_uri"):
+        p = _uri_to_path(str(ro.get(field, "")))
+        if p is not None and not p.exists():
+            raise FileNotFoundError(
+                f"Renderer reported {field}={ro[field]!r} "
+                f"but the file does not exist: {p}"
+            )
+
+    return ro

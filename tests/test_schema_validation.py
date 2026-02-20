@@ -100,11 +100,12 @@ def make_valid_render_output() -> dict:
     return {
         "schema_version": "1.0.0",
         "output_id": "test-output-001",
-        "project_id": "test-project",
-        "plan_ref": "test-plan-001",
-        "video_path": "placeholder://video/test.mp4",
-        "captions_path": "placeholder://captions/test.srt",
-        "content_hash": "a" * 64,
+        "video_uri": "file:///tmp/test/output.mp4",
+        "captions_uri": "file:///tmp/test/output.srt",
+        "hashes": {
+            "video_sha256": "a" * 64,
+            "captions_sha256": "b" * 64,
+        },
     }
 
 
@@ -230,9 +231,9 @@ class TestRenderOutput:
     def test_valid_render_output(self):
         validate_artifact(make_valid_render_output(), "RenderOutput")
 
-    def test_invalid_render_output_missing_video_path(self):
+    def test_invalid_render_output_missing_video_uri(self):
         data = make_valid_render_output()
-        del data["video_path"]
+        del data["video_uri"]
         with pytest.raises(jsonschema.ValidationError):
             validate_artifact(data, "RenderOutput")
 

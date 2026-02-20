@@ -24,7 +24,10 @@ lint:
 run-example:
 	$(VENV)/bin/orchestrator run --project examples/phase0/project.json
 
+verify-integration:
+	$(PY) scripts/verify_integration.py
+
 clean:
 	rm -rf artifacts/ __pycache__ .pytest_cache *.egg-info
 
-.PHONY: install test lint run-example clean
+.PHONY: install test lint run-example verify-integration clean

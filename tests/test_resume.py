@@ -1,11 +1,46 @@
 """Tests for ArtifactRegistry existence/validity checks and PipelineRunner resume logic."""
 
 import json
+from unittest.mock import patch
 
 import pytest
 
 from orchestrator.pipeline import PipelineRunner, compute_run_id
 from orchestrator.registry import ArtifactRegistry
+
+# ---------------------------------------------------------------------------
+# Stage 5 stub — used by pipeline-level tests so they don't need the real
+# video renderer binary.
+# ---------------------------------------------------------------------------
+
+_STUB_RENDER_OUTPUT = {
+    "schema_version": "1.0.0",
+    "output_id": "test-output-001",
+    "video_uri": "file:///tmp/test/output.mp4",
+    "captions_uri": "file:///tmp/test/output.srt",
+    "hashes": {
+        "video_sha256": "a" * 64,
+        "captions_sha256": "b" * 64,
+    },
+}
+
+
+@pytest.fixture()
+def mock_stage5():
+    """Patch stage5_render_preview.run to avoid needing the real video renderer."""
+
+    def _stub(project_config, run_id, registry):
+        pid = project_config["id"]
+        ro = {**_STUB_RENDER_OUTPUT, "project_id": pid}
+        registry.write_artifact(
+            pid, run_id, "RenderOutput", ro,
+            parent_refs=[],
+            creation_params={"stage": "stage5_render_preview"},
+        )
+        return ro
+
+    with patch("orchestrator.stages.stage5_render_preview.run", side_effect=_stub):
+        yield
 
 # ---------------------------------------------------------------------------
 # Shared project config used across all pipeline tests
@@ -138,7 +173,7 @@ class TestHashMismatchInvalidatesArtifact:
 
 
 class TestPipelineSkipsExistingStage:
-    def test_pipeline_skips_existing_stage(self, tmp_path):
+    def test_pipeline_skips_existing_stage(self, tmp_path, mock_stage5):
         """Second run (no force) skips all stages whose artifacts are already valid."""
         registry = ArtifactRegistry(tmp_path)
         run_id = compute_run_id(PROJECT_CONFIG)
@@ -169,7 +204,7 @@ class TestPipelineSkipsExistingStage:
 
 
 class TestPipelineForceReruns:
-    def test_pipeline_force_reruns(self, tmp_path):
+    def test_pipeline_force_reruns(self, tmp_path, mock_stage5):
         """force=True causes all stages to re-execute; hashes are identical (determinism)."""
         registry = ArtifactRegistry(tmp_path)
         run_id = compute_run_id(PROJECT_CONFIG)
@@ -207,7 +242,7 @@ class TestPipelineForceReruns:
 
 
 class TestFromStageReruns:
-    def test_from_stage_reruns_from_n(self, tmp_path):
+    def test_from_stage_reruns_from_n(self, tmp_path, mock_stage5):
         """from_stage=3 skips stages 1–2, re-runs stages 3–5."""
         registry = ArtifactRegistry(tmp_path)
         run_id = compute_run_id(PROJECT_CONFIG)
