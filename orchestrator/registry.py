@@ -46,9 +46,11 @@ class ArtifactRegistry:
     ) -> bool:
         """Return True iff the artifact file exists AND passes schema validation.
 
-        If a companion <artifact_type>.meta.json is present, also verifies that
-        the stored hash matches the current artifact content. A mismatch returns
-        False (treats the artifact as corrupted / tampered).
+        Meta is treated as strictly optional: only fail on a *confirmed* hash
+        mismatch (meta parsed successfully AND ``"hash"`` key present AND value
+        differs from the current artifact content).  Any other meta problem
+        (file unreadable, malformed JSON, missing ``"hash"`` key) is treated as
+        if no meta file exists, and the artifact is still considered valid.
         """
         path = self.artifact_path(project_id, run_id, artifact_type)
         if not path.exists():
@@ -56,12 +58,15 @@ class ArtifactRegistry:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             validate_artifact(data, artifact_type)
-            # NEW: hash check if meta is present
             meta_p = self.meta_path(project_id, run_id, artifact_type)
             if meta_p.exists():
-                meta = json.loads(meta_p.read_text(encoding="utf-8"))
-                if meta.get("hash") != hash_artifact(data):
-                    return False
+                try:
+                    meta = json.loads(meta_p.read_text(encoding="utf-8"))
+                    stored_hash = meta.get("hash")
+                    if stored_hash is not None and stored_hash != hash_artifact(data):
+                        return False
+                except Exception:
+                    pass  # malformed / unreadable meta → treat as absent
             return True
         except Exception:
             return False

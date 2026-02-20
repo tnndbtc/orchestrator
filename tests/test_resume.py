@@ -92,6 +92,30 @@ class TestInvalidArtifactNotValid:
         assert registry.exists_and_valid("proj", "run-003", "Script") is False
 
 
+class TestMalformedMetaStillValid:
+    def test_malformed_meta_treated_as_absent(self, registry):
+        """exists_and_valid returns True for valid artifact with unparseable meta."""
+        registry.write_artifact(
+            "proj", "run-004", "Script", VALID_SCRIPT,
+            parent_refs=[], creation_params={}
+        )
+        meta_p = registry.meta_path("proj", "run-004", "Script")
+        meta_p.write_text("not valid json {{{", encoding="utf-8")
+        assert registry.exists_and_valid("proj", "run-004", "Script") is True
+
+
+class TestMissingHashKeyStillValid:
+    def test_meta_without_hash_key_treated_as_absent(self, registry):
+        """exists_and_valid returns True when meta exists but has no 'hash' key."""
+        registry.write_artifact(
+            "proj", "run-005", "Script", VALID_SCRIPT,
+            parent_refs=[], creation_params={}
+        )
+        meta_p = registry.meta_path("proj", "run-005", "Script")
+        meta_p.write_text('{"artifact_type": "Script"}', encoding="utf-8")
+        assert registry.exists_and_valid("proj", "run-005", "Script") is True
+
+
 # ---------------------------------------------------------------------------
 # PipelineRunner tests
 # ---------------------------------------------------------------------------
