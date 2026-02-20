@@ -8,8 +8,33 @@ Implements a deterministic, schema-validated, resumable 5-stage pipeline that pr
 
 ## Prerequisites
 
-- Python 3.12+
-- virtualenv already created at `~/.virtualenvs/orchestrator`
+- Python 3.12+ on PATH. No pre-created venv needed — `setup.sh` creates `.venv` for you.
+
+---
+
+## Quick Start
+
+```bash
+./setup.sh
+```
+
+An interactive menu is displayed:
+
+```
+Orchestrator — setup menu
+  1) Setup environment
+  2) Run example pipeline
+  3) Run tests
+  4) Lint / compile check
+  5) Clean artifacts & cache
+  0) Exit
+```
+
+Choose **1** on first run to create `.venv` and install all dependencies.
+All subsequent options use the `.venv` created in the repo root.
+
+> **Custom venv path**: set `VENV_DIR` before invoking — e.g.
+> `VENV_DIR=/tmp/my-venv ./setup.sh`
 
 ---
 
@@ -17,9 +42,11 @@ Implements a deterministic, schema-validated, resumable 5-stage pipeline that pr
 
 ```bash
 make install
+# or via the menu:
+./setup.sh   # → option 1
 ```
 
-This runs `pip install -e ".[dev]"` into `~/.virtualenvs/orchestrator`.
+This runs `pip install -e ".[dev]"` into `.venv` (or `$VENV_DIR` if set).
 
 ---
 
@@ -70,8 +97,10 @@ orchestrator run --project examples/phase0/project.json --run-id my-run-001
 
 ```bash
 make test
+# or via the menu:
+./setup.sh   # → option 3
 # equivalent to:
-~/.virtualenvs/orchestrator/bin/pytest tests/ -v
+.venv/bin/pytest tests/ -v
 ```
 
 ---
