@@ -116,6 +116,22 @@ class TestMissingHashKeyStillValid:
         assert registry.exists_and_valid("proj", "run-005", "Script") is True
 
 
+class TestHashMismatchInvalidatesArtifact:
+    def test_hash_mismatch_returns_false(self, registry):
+        """exists_and_valid returns False when artifact content differs from stored hash."""
+        registry.write_artifact(
+            "proj", "run-006", "Script", VALID_SCRIPT,
+            parent_refs=[], creation_params={}
+        )
+        # Overwrite artifact with a different (still schema-valid) Script; leave meta unchanged
+        modified_script = {**VALID_SCRIPT, "title": "Modified Title"}
+        path = registry.artifact_path("proj", "run-006", "Script")
+        path.write_text(
+            json.dumps(modified_script, indent=2, sort_keys=True), encoding="utf-8"
+        )
+        assert registry.exists_and_valid("proj", "run-006", "Script") is False
+
+
 # ---------------------------------------------------------------------------
 # PipelineRunner tests
 # ---------------------------------------------------------------------------
