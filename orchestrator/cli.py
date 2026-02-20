@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 import click
@@ -280,6 +281,195 @@ def _diff_run_dirs(dir_a: Path, dir_b: Path) -> list[str]:
     return lines
 
 
+# Contract artifacts compared by investigate-determinism
+_CONTRACT_ARTIFACTS = [
+    "CanonDecision.json",
+    "ShotList.json",
+    "AssetManifest.json",
+    "RenderPlan.json",
+    "RenderOutput.json",
+]
+_OPTIONAL_CONTRACT = "render_preview/render_output.json"
+
+
+def _normalize_artifact(artifact_name: str, data: dict) -> dict:
+    """Return a deep copy of *data* with run-identity fields stripped.
+
+    CanonDecision.json is returned unchanged (compared fully).
+    Uses JSON round-trip for deep copy — no extra imports needed.
+    """
+    d = json.loads(json.dumps(data))  # deep copy
+
+    if artifact_name == "ShotList.json":
+        for f in ("script_id", "shotlist_id"):
+            d.pop(f, None)
+
+    elif artifact_name == "AssetManifest.json":
+        for f in ("manifest_id", "shotlist_ref"):
+            d.pop(f, None)
+
+    elif artifact_name == "RenderPlan.json":
+        for f in ("plan_id", "manifest_ref"):
+            d.pop(f, None)
+
+    elif artifact_name in ("RenderOutput.json", "render_preview/render_output.json"):
+        for f in ("request_id", "output_id"):
+            d.pop(f, None)
+        # Remove all top-level *_ref and *_uri fields
+        for key in list(d.keys()):
+            if key.endswith("_ref") or key.endswith("_uri"):
+                d.pop(key)
+        # Remove outputs[*].path (filesystem paths)
+        if isinstance(d.get("outputs"), list):
+            for item in d["outputs"]:
+                if isinstance(item, dict):
+                    item.pop("path", None)
+        # Remove provenance.rendered_at (wall-clock timestamp)
+        if isinstance(d.get("provenance"), dict):
+            d["provenance"].pop("rendered_at", None)
+
+    # CanonDecision.json — no normalization; full comparison
+    return d
+
+
+def _compute_normalized_render_hashes(run_dir: Path) -> dict:
+    """Compute sha256 hashes of the *normalized* AssetManifest and RenderPlan.
+
+    These replace the raw derived hash fields in RenderOutput so that
+    differences caused only by run-identity strings (manifest_id, plan_id …)
+    are invisible to the determinism comparison.
+
+    Returns an empty dict if either source artifact is missing or unreadable.
+    """
+    try:
+        manifest_raw = json.loads(
+            (run_dir / "AssetManifest.json").read_text(encoding="utf-8")
+        )
+        plan_raw = json.loads(
+            (run_dir / "RenderPlan.json").read_text(encoding="utf-8")
+        )
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+    norm_manifest = _normalize_artifact("AssetManifest.json", manifest_raw)
+    norm_plan = _normalize_artifact("RenderPlan.json", plan_raw)
+
+    # Canonical bytes: same algorithm used by the real renderer
+    manifest_bytes = json.dumps(
+        norm_manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    plan_bytes = json.dumps(
+        norm_plan, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+
+    return {
+        "asset_manifest_hash": hashlib.sha256(manifest_bytes).hexdigest(),
+        "render_plan_hash": hashlib.sha256(plan_bytes).hexdigest(),
+        # separator avoids accidental collisions between adjacent byte strings
+        "inputs_digest": hashlib.sha256(manifest_bytes + b"\n" + plan_bytes).hexdigest(),
+    }
+
+
+def _inject_normalized_render_hashes(data: dict, norm_hashes: dict) -> dict:
+    """Replace raw derived hash fields in a RenderOutput copy with normalized values.
+
+    Only replaces fields that already exist in *data* — never adds new keys.
+    Returns *data* unchanged when *norm_hashes* is empty (missing source artifacts).
+    """
+    if not norm_hashes:
+        return data
+    d = json.loads(json.dumps(data))  # deep copy
+    if "inputs_digest" in d:
+        d["inputs_digest"] = norm_hashes["inputs_digest"]
+    if isinstance(d.get("lineage"), dict):
+        if "asset_manifest_hash" in d["lineage"]:
+            d["lineage"]["asset_manifest_hash"] = norm_hashes["asset_manifest_hash"]
+        if "render_plan_hash" in d["lineage"]:
+            d["lineage"]["render_plan_hash"] = norm_hashes["render_plan_hash"]
+    return d
+
+
+def _compare_contract_artifacts(dir_a: Path, dir_b: Path) -> list[dict]:
+    """Return sorted list of diff dicts for all contract artifacts."""
+    diffs: list[dict] = []
+    candidates = list(_CONTRACT_ARTIFACTS)
+    opt_a = dir_a / _OPTIONAL_CONTRACT
+    opt_b = dir_b / _OPTIONAL_CONTRACT
+    if opt_a.exists() or opt_b.exists():
+        candidates.append(_OPTIONAL_CONTRACT)
+
+    # Pre-compute normalized hashes of the input artifacts; used to replace the
+    # raw derived hash fields in RenderOutput before field-level comparison.
+    norm_hashes_a = _compute_normalized_render_hashes(dir_a)
+    norm_hashes_b = _compute_normalized_render_hashes(dir_b)
+
+    for artifact in candidates:
+        fa, fb = dir_a / artifact, dir_b / artifact
+        missing_a, missing_b = not fa.exists(), not fb.exists()
+        if missing_a or missing_b:
+            diffs.append({
+                "artifact": artifact,
+                "type": "artifact_missing",
+                "path": "",
+                "runA": "present" if not missing_a else "missing",
+                "runB": "present" if not missing_b else "missing",
+            })
+            continue
+        try:
+            data_a = json.loads(fa.read_text(encoding="utf-8"))
+            data_b = json.loads(fb.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        data_a = _normalize_artifact(artifact, data_a)
+        data_b = _normalize_artifact(artifact, data_b)
+        # For RenderOutput variants, swap raw derived hashes for normalized recomputed ones
+        if artifact in ("RenderOutput.json", _OPTIONAL_CONTRACT):
+            data_a = _inject_normalized_render_hashes(data_a, norm_hashes_a)
+            data_b = _inject_normalized_render_hashes(data_b, norm_hashes_b)
+        flat_a = _flatten_json(data_a)
+        flat_b = _flatten_json(data_b)
+        for key in sorted(set(flat_a) | set(flat_b)):
+            if flat_a.get(key) != flat_b.get(key):
+                diffs.append({
+                    "artifact": artifact,
+                    "type": "json_field_mismatch",
+                    "path": key,
+                    "runA": flat_a.get(key),
+                    "runB": flat_b.get(key),
+                })
+
+    # When normalized derived hashes still differ (genuine semantic change), emit
+    # one diagnostic entry per source artifact showing the first mismatching field.
+    _hash_keys = ("asset_manifest_hash", "render_plan_hash", "inputs_digest")
+    if norm_hashes_a and norm_hashes_b and any(
+        norm_hashes_a.get(k) != norm_hashes_b.get(k) for k in _hash_keys
+    ):
+        for art_name, label in (
+            ("AssetManifest.json", "[AssetManifest]"),
+            ("RenderPlan.json", "[RenderPlan]"),
+        ):
+            try:
+                da = json.loads((dir_a / art_name).read_text(encoding="utf-8"))
+                db = json.loads((dir_b / art_name).read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            flat_a = _flatten_json(_normalize_artifact(art_name, da))
+            flat_b = _flatten_json(_normalize_artifact(art_name, db))
+            for key in sorted(set(flat_a) | set(flat_b)):
+                if flat_a.get(key) != flat_b.get(key):
+                    diffs.append({
+                        "artifact": "NORMALIZED_INPUTS",
+                        "type": "normalized_input_mismatch",
+                        "path": label,
+                        "runA": f"{key}: {flat_a.get(key)}",
+                        "runB": f"{key}: {flat_b.get(key)}",
+                    })
+                    break  # first mismatch only per source artifact
+
+    # Stable sort: (artifact, path)
+    return sorted(diffs, key=lambda d: (d["artifact"], d["path"]))
+
+
 @cli.command("validate-run")
 @click.option("--run", "run_dir", required=True,
               type=click.Path(exists=True, file_okay=False, readable=True),
@@ -543,3 +733,72 @@ def validate_bundle_command(bundle_dir: str) -> None:
             click.echo(e)
         sys.exit(1)
     click.echo("OK: bundle valid")
+
+
+@cli.command("investigate-determinism")
+@click.option(
+    "--project", required=True,
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    help="Path to project.json",
+)
+@click.option(
+    "--out", "out_dir", required=True,
+    type=click.Path(file_okay=False),
+    help="Directory to write DeterminismReport.json and run artifacts",
+)
+def investigate_determinism_command(project: str, out_dir: str) -> None:
+    """Run the pipeline twice and report determinism of contract artifacts."""
+    project_path = Path(project).resolve()
+    project_config = json.loads(project_path.read_text(encoding="utf-8"))
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    artifacts_dir = out_path / "runs"
+    project_id = project_config["id"]
+    token = uuid.uuid4().hex[:8]
+    run_id_a = f"invdet-a-{token}"
+    run_id_b = f"invdet-b-{token}"
+
+    _canon = {
+        "schema_id": "CanonDecision", "schema_version": "1.0.0",
+        "decision": "allow", "decision_id": "investigate-determinism",
+    }
+
+    for run_id in (run_id_a, run_id_b):
+        run_dir = artifacts_dir / project_id / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "CanonDecision.json").write_text(
+            json.dumps(_canon, indent=2), encoding="utf-8"
+        )
+        registry = ArtifactRegistry(artifacts_dir)
+        runner = PipelineRunner(
+            project_config=project_config,
+            registry=registry,
+            artifacts_dir=artifacts_dir,
+            force=True,
+            run_id=run_id,
+            project_path=str(project_path),
+        )
+        summary = runner.run()
+        if summary["status"] != "completed":
+            click.echo(f"ERROR: pipeline run {run_id} failed")
+            for err in summary.get("errors", []):
+                click.echo(f"  {err}")
+            sys.exit(1)
+
+    dir_a = artifacts_dir / project_id / run_id_a
+    dir_b = artifacts_dir / project_id / run_id_b
+    diffs = _compare_contract_artifacts(dir_a, dir_b)
+
+    status = "pass" if not diffs else "fail"
+    report = {"status": status, "diffs": diffs}
+    report_path = out_path / "DeterminismReport.json"
+    report_path.write_text(
+        json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+    click.echo(f"DeterminismReport: {report_path}")
+    if diffs:
+        click.echo(f"FAIL: {len(diffs)} diff(s) found")
+        sys.exit(1)
+    click.echo("OK: determinism pass")
