@@ -6,6 +6,7 @@ from pathlib import Path
 import jsonschema
 
 ARTIFACT_SCHEMAS: dict[str, str] = {
+    "EpisodeBundle": "EpisodeBundle.v1.json",
     "Script": "Script.v1.json",
     "ShotList": "ShotList.v1.json",
     "AssetManifest": "AssetManifest.v1.json",

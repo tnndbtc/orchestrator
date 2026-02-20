@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -10,9 +11,10 @@ from pathlib import Path
 
 import click
 
+from .packager import package_episode
 from .pipeline import PipelineRunner
 from .registry import ArtifactRegistry
-from .utils.hashing import hash_file_bytes
+from .utils.hashing import hash_artifact, hash_file_bytes
 
 
 @click.group()
@@ -468,3 +470,76 @@ def verify_system_command() -> None:
         sys.exit(1)
 
     click.echo("OK: system verified")
+
+
+@cli.command("package")
+@click.option(
+    "--run", "run_dir", required=True,
+    type=click.Path(exists=True, file_okay=False, readable=True),
+    help="Path to a finished run directory",
+)
+@click.option("--episode-id", required=True, help="Stable episode identifier")
+@click.option(
+    "--out", "out_dir", required=True,
+    type=click.Path(file_okay=False),
+    help="Parent directory to create the bundle under",
+)
+@click.option(
+    "--mode", default="copy",
+    type=click.Choice(["copy", "hardlink"]),
+    show_default=True,
+    help="File transfer mode: copy (safe default) or hardlink (faster; source artifacts must remain immutable after packaging)",
+)
+def package_command(run_dir: str, episode_id: str, out_dir: str, mode: str) -> None:
+    """Assemble a finished run dir into a portable EpisodeBundle."""
+    try:
+        package_episode(Path(run_dir), episode_id, Path(out_dir), mode)
+    except ValueError as exc:
+        click.echo(str(exc))
+        sys.exit(1)
+    click.echo(f"OK: packaged episode {episode_id}")
+
+
+@cli.command("validate-bundle")
+@click.option(
+    "--bundle", "bundle_dir", required=True,
+    type=click.Path(exists=True, file_okay=False, readable=True),
+    help="Path to a bundle root directory containing EpisodeBundle.json",
+)
+def validate_bundle_command(bundle_dir: str) -> None:
+    """Re-verify all artifact hashes and bundle_hash in an EpisodeBundle."""
+    bundle_path = Path(bundle_dir)
+    bundle_json_path = bundle_path / "EpisodeBundle.json"
+
+    if not bundle_json_path.exists():
+        click.echo(f"ERROR: EpisodeBundle.json not found in {bundle_path}")
+        sys.exit(1)
+
+    try:
+        bundle_data = json.loads(bundle_json_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        click.echo(f"ERROR: EpisodeBundle.json is not valid JSON: {exc}")
+        sys.exit(1)
+
+    errors: list[str] = []
+
+    # Verify each artifact file hash
+    for name, entry in bundle_data.get("artifacts", {}).items():
+        fp = bundle_path / entry["path"]
+        if not fp.exists():
+            errors.append(f"ERROR: missing file: {entry['path']}")
+            continue
+        if hash_file_bytes(fp) != entry["sha256"]:
+            errors.append(f"ERROR: hash mismatch for {entry['path']}")
+
+    # Verify bundle_hash
+    without = {k: v for k, v in bundle_data.items()
+               if k not in ("bundle_hash", "created_utc")}
+    if hash_artifact(without) != bundle_data.get("bundle_hash", ""):
+        errors.append("ERROR: bundle_hash mismatch")
+
+    if errors:
+        for e in errors:
+            click.echo(e)
+        sys.exit(1)
+    click.echo("OK: bundle valid")
