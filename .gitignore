@@ -57,3 +57,5 @@ artifacts/
 *~
 .DS_Store
 Thumbs.db
+
+determinism_check*/
