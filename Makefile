@@ -8,6 +8,9 @@ install:
 test:
 	$(VENV)/bin/pytest tests/ -v
 
+test-isolated:
+	env -u VIDEO_RENDERER_REPO -u VIDEO_RENDERER_PYTHON $(VENV)/bin/pytest tests/ -v
+
 lint:
 	$(PY) -m py_compile \
 		orchestrator/cli.py \
@@ -30,4 +33,4 @@ verify-integration:
 clean:
 	rm -rf artifacts/ __pycache__ .pytest_cache *.egg-info
 
-.PHONY: install test lint run-example verify-integration clean
+.PHONY: install test test-isolated lint run-example verify-integration clean
