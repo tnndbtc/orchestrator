@@ -30,6 +30,21 @@ STAGE_INPUTS: dict[str, list[str]] = {
 }
 
 
+class _SchemaMissingError(RuntimeError):
+    """Artifact JSON lacks valid schema_id or schema_version."""
+
+
+class _ContinuationMissing(RuntimeError):
+    """Continuation decision file is absent from run_dir."""
+
+
+class _ContinuationRejected(RuntimeError):
+    """Continuation decision == 'deny'."""
+
+
+_GATE_EXCEPTIONS = (_SchemaMissingError, _ContinuationMissing, _ContinuationRejected)
+
+
 def compute_run_id(project_config: dict) -> str:
     """Derive a stable run ID from the canonical SHA-256 of the project config.
 
@@ -53,7 +68,7 @@ def _build_file_entry(run_dir: Path, file_path: Path) -> dict:
     schema_version = data.get("schema_version")
     schema_id = data.get("schema_id")
     if schema_version is None:
-        print(f"WARNING: missing schema metadata for {rel_path}", flush=True)
+        pass   # enforcement done in pipeline loop; no warning here
     else:
         entry["schema_version"] = schema_version
         if schema_id is not None:
@@ -61,13 +76,53 @@ def _build_file_entry(run_dir: Path, file_path: Path) -> dict:
     return entry
 
 
-def write_run_index(run_dir: Path, stage_results: list[dict]) -> dict:
-    """Compute and write RunIndex.json into run_dir after a completed run.
+def _enforce_schema_metadata(run_dir: Path, file_path: Path) -> None:
+    """Raise _SchemaMissingError if the JSON file has absent or mismatched schema metadata.
+
+    Checks:
+      - schema_version is present
+      - schema_id is present AND equals the artifact type (file stem)
+    """
+    try:
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return  # non-JSON / unreadable: skip
+    rel = str(file_path.relative_to(run_dir))
+    expected_type = file_path.stem  # e.g. "Script" from "Script.json"
+    schema_id = data.get("schema_id")
+    schema_version = data.get("schema_version")
+    if schema_id is None or schema_version is None or schema_id != expected_type:
+        raise _SchemaMissingError(f"ERROR: missing schema metadata for {rel}")
+
+
+def _check_canon_decision(run_dir: Path) -> None:
+    """Raise _ContinuationMissing or _ContinuationRejected based on CanonDecision.json."""
+    canon_file = run_dir / "CanonDecision.json"
+    if not canon_file.exists():
+        raise _ContinuationMissing("ERROR: continuation decision missing")
+    try:
+        data = json.loads(canon_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        data = {}
+    if data.get("decision") == "deny":
+        reasons = data.get("reasons", [])
+        token = reasons[0] if reasons else "DENY"
+        raise _ContinuationRejected(f"ERROR: continuation rejected: {token}")
+
+
+def write_run_index(
+    run_dir: Path,
+    stage_results: list[dict],
+    *,
+    failure_reason: str | None = None,
+) -> dict:
+    """Compute and write RunIndex.json into run_dir after a completed (or denied) run.
 
     - All paths are relative to run_dir (portable).
     - File hashes are byte-level SHA-256 (not canonical JSON hash).
     - RunIndex run_id = SHA-256 over sorted set of unique input-file hashes.
-    - Called only when overall pipeline status == "completed".
+    - Called only when overall pipeline status == "completed" OR when CanonGate denied.
+    - failure_reason: if set, adds status="failed" and failure_reason to RunIndex.
     """
     stages_index: list[dict] = []
 
@@ -112,6 +167,9 @@ def write_run_index(run_dir: Path, stage_results: list[dict]) -> dict:
         "pipeline_version": "phase0",
         "stages": stages_index,
     }
+    if failure_reason is not None:
+        run_index["status"] = "failed"
+        run_index["failure_reason"] = failure_reason
     (run_dir / "RunIndex.json").write_text(
         json.dumps(run_index, indent=2), encoding="utf-8"
     )
@@ -180,6 +238,8 @@ class PipelineRunner:
         stage_results: list[dict] = []
         errors: list[str] = []
         overall_status = "completed"
+        run_dir = self.registry.run_dir(self.project_id, self.run_id)
+        _failure_reason: str | None = None
 
         for stage_num, stage_name, artifact_type in STAGES:
             should_run = self._should_run(stage_num, artifact_type)
@@ -204,14 +264,56 @@ class PipelineRunner:
                 )
                 continue
 
+            # CanonDecision gate — fires only when stage5 is about to run
+            if stage_name == "stage5_render_preview" and should_run:
+                try:
+                    _check_canon_decision(run_dir)
+                except _GATE_EXCEPTIONS as exc:
+                    msg = str(exc)
+                    print(msg, flush=True)
+                    errors.append(msg)
+                    overall_status = "failed"
+                    if isinstance(exc, _ContinuationRejected):
+                        _failure_reason = "continuation_rejected"
+                    stage_results.append(
+                        {
+                            "name": stage_name,
+                            "stage_num": stage_num,
+                            "artifact_type": artifact_type,
+                            "status": "failed",
+                            "skipped": False,
+                            "duration_sec": 0.0,
+                            "artifact_path": str(
+                                self.registry.artifact_path(
+                                    self.project_id, self.run_id, artifact_type
+                                )
+                            ),
+                            "artifact_hash": None,
+                            "error": msg,
+                        }
+                    )
+                    break
+
             stage_start = time.monotonic()
             try:
+                # Enforce schema metadata on all inputs for this stage
+                for itype in sorted(STAGE_INPUTS.get(stage_name, [])):
+                    ifile = run_dir / f"{itype}.json"
+                    if ifile.exists():
+                        _enforce_schema_metadata(run_dir, ifile)
+
                 module = importlib.import_module(
                     f".stages.{stage_name}", package="orchestrator"
                 )
                 artifact = module.run(
                     self.project_config, self.run_id, self.registry
                 )
+
+                # Enforce schema metadata on output artifact
+                artifact_file = run_dir / f"{artifact_type}.json"
+                if artifact_file.exists():
+                    _enforce_schema_metadata(run_dir, artifact_file)
+
                 duration = time.monotonic() - stage_start
                 stage_results.append(
                     {
@@ -232,7 +334,11 @@ class PipelineRunner:
                 )
             except Exception as exc:
                 duration = time.monotonic() - stage_start
-                error_msg = f"{type(exc).__name__}: {exc}"
+                error_msg = (
+                    str(exc)
+                    if isinstance(exc, _GATE_EXCEPTIONS)
+                    else f"{type(exc).__name__}: {exc}"
+                )
                 errors.append(error_msg)
                 overall_status = "failed"
                 stage_results.append(
@@ -267,9 +373,10 @@ class PipelineRunner:
         }
         self.registry.write_run_summary(self.project_id, self.run_id, summary)
 
-        # Write RunIndex.json only for fully completed runs.
+        # Write RunIndex.json on completion or continuation_rejected only.
         if overall_status == "completed":
-            run_dir = self.registry.run_dir(self.project_id, self.run_id)
             write_run_index(run_dir, stage_results)
+        elif _failure_reason is not None:         # CanonGate denied only
+            write_run_index(run_dir, stage_results, failure_reason=_failure_reason)
 
         return summary

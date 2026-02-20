@@ -9,6 +9,7 @@
     "created_at":         { "type": "string" },
     "episode_id":         { "type": ["string", "null"] },
     "metadata":           { "type": "object" },
+    "schema_id":          { "type": "string" },
     "schema_version":     { "type": "string", "const": "1.0.0" },
     "script_id":          { "type": "string" },
     "shotlist_id":        { "type": "string" },

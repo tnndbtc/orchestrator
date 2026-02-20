@@ -76,6 +76,7 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
     total_duration_sec = sum(s["duration_sec"] for s in shots)
 
     shotlist: dict = {
+        "schema_id": "ShotList",
         "schema_version": "1.0.0",
         "shotlist_id": f"shotlist-{project_id}-{run_id[:8]}",
         "script_id": script["script_id"],

@@ -5,7 +5,7 @@
   "required": ["schema_version", "output_id", "video_uri", "captions_uri", "hashes"],
   "additionalProperties": true,
   "properties": {
-    "schema_version": {"type": "string", "const": "1.0.0"},
+    "schema_version": {"type": "string"},
     "output_id": {"type": "string"},
     "video_uri": {"type": "string"},
     "captions_uri": {"type": "string"},

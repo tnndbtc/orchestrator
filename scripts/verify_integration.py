@@ -21,6 +21,17 @@ def main() -> None:
         registry = ArtifactRegistry(artifacts_dir)
         run_id = compute_run_id(project_config)
 
+        # Wave 3: CanonDecision.json must be present before stage5 runs.
+        # The integration script uses a synthetic "allow" decision.
+        run_dir = artifacts_dir / project_id / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "CanonDecision.json").write_text(json.dumps({
+            "schema_version": "1.0.0",
+            "schema_id": "CanonDecision",
+            "decision": "allow",
+            "decision_id": "verify-integration-allow",
+        }), encoding="utf-8")
+
         print(f"▶  Running pipeline for '{project_id}' (run_id={run_id})…")
         summary = PipelineRunner(
             project_config=project_config,

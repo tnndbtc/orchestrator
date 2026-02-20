@@ -58,6 +58,7 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
         )
 
     render_plan: dict = {
+        "schema_id": "RenderPlan",
         "schema_version": "1.0.0",
         "plan_id": f"plan-{project_id}-{run_id[:8]}",
         "project_id": project_id,

@@ -16,6 +16,7 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
     genre = project_config.get("genre", "drama")
 
     script: dict = {
+        "schema_id": "Script",
         "schema_version": "1.0.0",
         "script_id": f"script-{project_id}-{run_id[:8]}",
         "project_id": project_id,

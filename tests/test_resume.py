@@ -15,6 +15,7 @@ from orchestrator.registry import ArtifactRegistry
 
 _STUB_RENDER_OUTPUT = {
     "schema_version": "1.0.0",
+    "schema_id": "RenderOutput",
     "output_id": "test-output-001",
     "video_uri": "file:///tmp/test/output.mp4",
     "captions_uri": "file:///tmp/test/output.srt",
@@ -172,11 +173,26 @@ class TestHashMismatchInvalidatesArtifact:
 # ---------------------------------------------------------------------------
 
 
+_CANON_ALLOW = {
+    "schema_version": "1.0.0",
+    "schema_id": "CanonDecision",
+    "decision": "allow",
+    "decision_id": "test-allow-01",
+}
+
+
 class TestPipelineSkipsExistingStage:
     def test_pipeline_skips_existing_stage(self, tmp_path, mock_stage5):
         """Second run (no force) skips all stages whose artifacts are already valid."""
         registry = ArtifactRegistry(tmp_path)
         run_id = compute_run_id(PROJECT_CONFIG)
+
+        # Pre-write CanonDecision.json (allow) so the gate passes for stage5
+        run_dir = tmp_path / PROJECT_CONFIG["id"] / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "CanonDecision.json").write_text(
+            json.dumps(_CANON_ALLOW), encoding="utf-8"
+        )
 
         # First run — all stages execute
         runner1 = PipelineRunner(
@@ -208,6 +224,13 @@ class TestPipelineForceReruns:
         """force=True causes all stages to re-execute; hashes are identical (determinism)."""
         registry = ArtifactRegistry(tmp_path)
         run_id = compute_run_id(PROJECT_CONFIG)
+
+        # Pre-write CanonDecision.json (allow) so the gate passes for stage5
+        run_dir = tmp_path / PROJECT_CONFIG["id"] / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "CanonDecision.json").write_text(
+            json.dumps(_CANON_ALLOW), encoding="utf-8"
+        )
 
         runner1 = PipelineRunner(
             project_config=PROJECT_CONFIG,
@@ -246,6 +269,13 @@ class TestFromStageReruns:
         """from_stage=3 skips stages 1–2, re-runs stages 3–5."""
         registry = ArtifactRegistry(tmp_path)
         run_id = compute_run_id(PROJECT_CONFIG)
+
+        # Pre-write CanonDecision.json (allow) so the gate passes for stage5
+        run_dir = tmp_path / PROJECT_CONFIG["id"] / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "CanonDecision.json").write_text(
+            json.dumps(_CANON_ALLOW), encoding="utf-8"
+        )
 
         # Full first run to populate all artifacts
         runner1 = PipelineRunner(

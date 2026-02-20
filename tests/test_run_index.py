@@ -4,13 +4,22 @@ import json
 import re
 import time
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
 
 from orchestrator.cli import cli
-from orchestrator.pipeline import PipelineRunner, compute_run_id, write_run_index
+from orchestrator.pipeline import (
+    PipelineRunner,
+    _ContinuationMissing,
+    _ContinuationRejected,
+    _SchemaMissingError,
+    _check_canon_decision,
+    _enforce_schema_metadata,
+    compute_run_id,
+    write_run_index,
+)
 from orchestrator.registry import ArtifactRegistry
 from orchestrator.utils.hashing import hash_artifact, hash_file_bytes
 
@@ -20,6 +29,7 @@ from orchestrator.utils.hashing import hash_artifact, hash_file_bytes
 
 _STUB_RENDER_OUTPUT = {
     "schema_version": "1.0.0",
+    "schema_id": "RenderOutput",
     "output_id": "test-output-001",
     "video_uri": "file:///tmp/test/output.mp4",
     "captions_uri": "file:///tmp/test/output.srt",
@@ -27,6 +37,25 @@ _STUB_RENDER_OUTPUT = {
         "video_sha256": "a" * 64,
         "captions_sha256": "b" * 64,
     },
+}
+
+# ---------------------------------------------------------------------------
+# CanonDecision fixtures used across Wave2 and Wave3 tests
+# ---------------------------------------------------------------------------
+
+_CANON_ALLOW = {
+    "schema_version": "1.0.0",
+    "schema_id": "CanonDecision",
+    "decision": "allow",
+    "decision_id": "test-allow-01",
+}
+
+_CANON_DENY = {
+    "schema_version": "1.0.0",
+    "schema_id": "CanonDecision",
+    "decision": "deny",
+    "reasons": ["FORBIDDEN_TOKEN"],
+    "decision_id": "test-deny-01",
 }
 
 
@@ -73,9 +102,20 @@ def _run_full_pipeline(
     project_config: dict = PROJECT_CONFIG,
     project_path: str = "",
     force: bool = False,
+    canon_decision: dict | None = _CANON_ALLOW,
 ) -> tuple[dict, Path]:
     registry = ArtifactRegistry(tmp_path)
     run_id = compute_run_id(project_config)
+    run_dir = tmp_path / project_config["id"] / run_id
+
+    # Write a default CanonDecision.json so existing tests keep working.
+    # Don't overwrite if the test pre-wrote its own CanonDecision.json.
+    if canon_decision is not None:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        canon_file = run_dir / "CanonDecision.json"
+        if not canon_file.exists():
+            canon_file.write_text(json.dumps(canon_decision), encoding="utf-8")
+
     runner = PipelineRunner(
         project_config=project_config,
         registry=registry,
@@ -85,7 +125,6 @@ def _run_full_pipeline(
         force=force,
     )
     summary = runner.run()
-    run_dir = tmp_path / project_config["id"] / run_id
     return summary, run_dir
 
 
@@ -189,7 +228,7 @@ class TestWriteRunIndex:
             raise RuntimeError("Stage 1 intentionally failed")
 
         with patch("orchestrator.stages.stage1_generate_script.run", side_effect=_fail):
-            summary, run_dir = _run_full_pipeline(tmp_path)
+            summary, run_dir = _run_full_pipeline(tmp_path, canon_decision=None)
 
         assert summary["status"] == "failed"
         assert not (run_dir / "RunIndex.json").exists(), (
@@ -370,16 +409,22 @@ class TestWave2:
                 )
 
     def test_no_schema_id_for_regular_artifacts(self, tmp_path, mock_stage5):
-        """Regular artifacts lack schema_id; assert key absent from their entries."""
+        """Regular artifacts now carry schema_id; verify it IS present in their entries."""
         _, run_dir = _run_full_pipeline(tmp_path)
         idx = json.loads((run_dir / "RunIndex.json").read_text(encoding="utf-8"))
         for stage in idx["stages"]:
             for entry in stage["outputs"]:
-                # Skip CanonDecision.json which intentionally carries schema_id
+                # Skip CanonDecision.json which has its own schema_id
                 if "CanonDecision" in entry["path"]:
                     continue
-                assert "schema_id" not in entry, (
-                    f"Regular artifact {entry['path']} should not have schema_id in entry"
+                assert "schema_id" in entry, (
+                    f"Regular artifact {entry['path']} should have schema_id in entry"
+                )
+                # Derive expected schema_id from the file stem (e.g. "Script.json" → "Script")
+                expected_id = Path(entry["path"]).stem
+                assert entry["schema_id"] == expected_id, (
+                    f"schema_id mismatch in {entry['path']}: "
+                    f"expected {expected_id!r}, got {entry['schema_id']!r}"
                 )
 
     def test_canon_decision_recorded(self, tmp_path, mock_stage5):
@@ -423,16 +468,112 @@ class TestWave2:
         )
 
     def test_warning_on_missing_schema_metadata(self, tmp_path, capsys):
-        """write_run_index emits WARNING to stdout for artifacts missing schema_version."""
-        run_dir = tmp_path / "warn_run"
+        """_enforce_schema_metadata raises _SchemaMissingError and prints ERROR for bare JSON."""
+        run_dir = tmp_path / "enforce_run"
         run_dir.mkdir()
         bare_file = run_dir / "Bare.json"
         bare_file.write_text('{"some_field": "value"}', encoding="utf-8")
 
-        write_run_index(
-            run_dir,
-            [{"name": "stage1_generate_script", "artifact_type": "Bare"}],
+        with pytest.raises(_SchemaMissingError):
+            _enforce_schema_metadata(run_dir, bare_file)
+
+
+# ===========================================================================
+# TestWave3
+# ===========================================================================
+
+class TestWave3:
+    def test_happy_path_with_allow(self, tmp_path, mock_stage5):
+        """Pipeline completes when CanonDecision.json has decision='allow'."""
+        # _run_full_pipeline places _CANON_ALLOW by default (no pre-write needed)
+        summary, run_dir = _run_full_pipeline(tmp_path)
+
+        assert summary["status"] == "completed"
+        assert (run_dir / "RunIndex.json").exists()
+        idx = json.loads((run_dir / "RunIndex.json").read_text(encoding="utf-8"))
+        assert "failure_reason" not in idx
+        assert "status" not in idx  # optional field only present on failure
+
+    def test_deny_stops_before_renderer(self, tmp_path, capsys):
+        """Continuation rejected blocks stage5; RunIndex written with status=failed."""
+        run_id = compute_run_id(PROJECT_CONFIG)
+        run_dir = tmp_path / PROJECT_CONFIG["id"] / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "CanonDecision.json").write_text(
+            json.dumps(_CANON_DENY), encoding="utf-8"
         )
 
+        stage5_mock = MagicMock(side_effect=AssertionError("renderer must not run"))
+        with patch("orchestrator.stages.stage5_render_preview.run", stage5_mock):
+            # Use a mock_stage5-style stub for stages 1-4; but for gate test we need
+            # stages 1-4 to run normally. Use default canon_decision=None so we don't
+            # overwrite the pre-written deny file.
+            summary, _ = _run_full_pipeline(tmp_path, canon_decision=None)
+
+        stage5_mock.assert_not_called()
+        assert summary["status"] == "failed"
+
         captured = capsys.readouterr()
-        assert "WARNING: missing schema metadata for" in captured.out
+        assert "ERROR: continuation rejected: FORBIDDEN_TOKEN" in captured.out
+
+        assert (run_dir / "RunIndex.json").exists(), (
+            "RunIndex.json must be written even on continuation_rejected"
+        )
+        idx = json.loads((run_dir / "RunIndex.json").read_text(encoding="utf-8"))
+        assert idx.get("status") == "failed"
+        assert idx.get("failure_reason") == "continuation_rejected"
+
+    def test_missing_canon_decision_fails(self, tmp_path, capsys):
+        """Missing CanonDecision.json fails the pipeline; RunIndex NOT written."""
+        # canon_decision=None → no file placed → gate raises _ContinuationMissing
+        def _stub5(project_config, run_id, registry):
+            raise AssertionError("stage5 must not run")
+
+        with patch("orchestrator.stages.stage5_render_preview.run", side_effect=_stub5):
+            summary, run_dir = _run_full_pipeline(tmp_path, canon_decision=None)
+
+        assert summary["status"] == "failed"
+
+        captured = capsys.readouterr()
+        assert "ERROR: continuation decision missing" in captured.out
+
+        assert not (run_dir / "RunIndex.json").exists(), (
+            "RunIndex.json must NOT be written when continuation decision is absent"
+        )
+
+    def test_missing_schema_metadata_fails(self, tmp_path):
+        """Stage output lacking schema_id fails enforcement; RunIndex NOT written."""
+
+        def _bad_stage1(project_config, run_id, registry):
+            # Write Script.json without schema_id to trigger enforcement
+            run_dir = registry.run_dir(project_config["id"], run_id)
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "Script.json").write_text(
+                json.dumps({"schema_version": "1.0.0"}), encoding="utf-8"
+            )
+            return {"schema_version": "1.0.0"}
+
+        with patch(
+            "orchestrator.stages.stage1_generate_script.run",
+            side_effect=_bad_stage1,
+        ):
+            summary, run_dir = _run_full_pipeline(tmp_path, canon_decision=None)
+
+        assert summary["status"] == "failed"
+        assert any("Script.json" in e for e in summary["errors"]), (
+            "summary errors must reference the offending artifact"
+        )
+
+        assert not (run_dir / "RunIndex.json").exists(), (
+            "RunIndex.json must NOT be written when schema enforcement fails"
+        )
+
+    def test_enforce_schema_unit(self, tmp_path, capsys):
+        """_enforce_schema_metadata raises _SchemaMissingError on bare JSON."""
+        run_dir = tmp_path / "unit_run"
+        run_dir.mkdir()
+        bare_file = run_dir / "Artifact.json"
+        bare_file.write_text('{"data": "no schema fields here"}', encoding="utf-8")
+
+        with pytest.raises(_SchemaMissingError):
+            _enforce_schema_metadata(run_dir, bare_file)
