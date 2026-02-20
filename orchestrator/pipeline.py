@@ -103,6 +103,7 @@ class PipelineRunner:
                 stage_results.append(
                     {
                         "name": stage_name,
+                        "stage_num": stage_num,
                         "artifact_type": artifact_type,
                         "status": "skipped",
                         "skipped": True,
@@ -130,6 +131,7 @@ class PipelineRunner:
                 stage_results.append(
                     {
                         "name": stage_name,
+                        "stage_num": stage_num,
                         "artifact_type": artifact_type,
                         "status": "completed",
                         "skipped": False,
@@ -151,6 +153,7 @@ class PipelineRunner:
                 stage_results.append(
                     {
                         "name": stage_name,
+                        "stage_num": stage_num,
                         "artifact_type": artifact_type,
                         "status": "failed",
                         "skipped": False,

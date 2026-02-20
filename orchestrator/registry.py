@@ -44,13 +44,24 @@ class ArtifactRegistry:
     def exists_and_valid(
         self, project_id: str, run_id: str, artifact_type: str
     ) -> bool:
-        """Return True iff the artifact file exists AND passes schema validation."""
+        """Return True iff the artifact file exists AND passes schema validation.
+
+        If a companion <artifact_type>.meta.json is present, also verifies that
+        the stored hash matches the current artifact content. A mismatch returns
+        False (treats the artifact as corrupted / tampered).
+        """
         path = self.artifact_path(project_id, run_id, artifact_type)
         if not path.exists():
             return False
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             validate_artifact(data, artifact_type)
+            # NEW: hash check if meta is present
+            meta_p = self.meta_path(project_id, run_id, artifact_type)
+            if meta_p.exists():
+                meta = json.loads(meta_p.read_text(encoding="utf-8"))
+                if meta.get("hash") != hash_artifact(data):
+                    return False
             return True
         except Exception:
             return False

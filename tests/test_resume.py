@@ -196,8 +196,7 @@ class TestFromStageReruns:
         assert summary2["status"] == "completed"
 
         for stage in summary2["stages"]:
-            # Stage number is the digit at index 5 of the name: "stage1_..." → 1
-            stage_num = int(stage["name"][5])
+            stage_num = stage["stage_num"]
             if stage_num < 3:
                 assert stage["skipped"] is True, (
                     f"Stage {stage_num} should be skipped (< from_stage=3)"
