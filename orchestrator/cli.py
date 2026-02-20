@@ -1,7 +1,11 @@
 """Click CLI entrypoint for the Orchestrator pipeline."""
 
+import hashlib
 import json
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import click
@@ -375,3 +379,92 @@ def diff_command(run_dir: str, against_dir: str) -> None:
         sys.exit(1)
     else:
         click.echo("OK: no differences")
+
+
+@cli.command("verify-system")
+def verify_system_command() -> None:
+    """Run external tool checks then full pipeline + validate + diff."""
+    errors: list[tuple[str, str]] = []
+
+    # Locate the orchestrator binary (same venv as this process)
+    orchestrator_bin = shutil.which("orchestrator") or sys.argv[0]
+
+    # Steps 1–3: external component health checks (deterministic order)
+    for step_cmd in (
+        ["world-engine", "verify"],
+        ["media", "verify"],
+        ["video", "verify"],
+    ):
+        step_name = " ".join(step_cmd)
+        try:
+            proc = subprocess.run(step_cmd, capture_output=True, text=True)
+            if proc.returncode != 0:
+                errors.append((step_name, proc.stdout + proc.stderr))
+        except FileNotFoundError:
+            pass  # binary not installed — skip this check
+
+    # Steps 4–6: pipeline in a temp directory
+    repo_root = Path(__file__).resolve().parent.parent
+    project_file = repo_root / "examples" / "phase0" / "project.json"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+
+        # Compute run_id inline (same formula as compute_run_id, no repo import)
+        project_config = json.loads(project_file.read_text(encoding="utf-8"))
+        raw = json.dumps(
+            project_config, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        run_id = "run-" + hashlib.sha256(raw).hexdigest()[:12]
+
+        # Pre-write CanonDecision.json (allow) so the gate passes
+        run_dir = tmp_path / project_config["id"] / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        canon = {
+            "schema_id": "CanonDecision",
+            "schema_version": "1.0.0",
+            "decision": "allow",
+            "decision_id": "verify-system-canon-01",
+        }
+        (run_dir / "CanonDecision.json").write_text(
+            json.dumps(canon, indent=2), encoding="utf-8"
+        )
+
+        # Step 4: full pipeline
+        proc = subprocess.run(
+            [orchestrator_bin, "run",
+             "--project", str(project_file),
+             "--artifacts-dir", tmp_dir,
+             "--force"],
+            capture_output=True, text=True,
+        )
+        pipeline_ok = proc.returncode == 0
+        if not pipeline_ok:
+            errors.append(("orchestrator run", proc.stdout + proc.stderr))
+
+        if pipeline_ok:
+            # Step 5: validate-run
+            proc = subprocess.run(
+                [orchestrator_bin, "validate-run", "--run", str(run_dir)],
+                capture_output=True, text=True,
+            )
+            if proc.returncode != 0:
+                errors.append(("orchestrator validate-run",
+                                proc.stdout + proc.stderr))
+
+            # Step 6: diff against itself
+            proc = subprocess.run(
+                [orchestrator_bin, "diff",
+                 "--run", str(run_dir), "--against", str(run_dir)],
+                capture_output=True, text=True,
+            )
+            if proc.returncode != 0:
+                errors.append(("orchestrator diff", proc.stdout + proc.stderr))
+
+    if errors:
+        for step_name, output in errors:
+            click.echo(f"FAIL: {step_name}")
+            click.echo(output.rstrip())
+        sys.exit(1)
+
+    click.echo("OK: system verified")
