@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from .registry import ArtifactRegistry
-from .utils.hashing import hash_artifact
+from .utils.hashing import hash_artifact, hash_file_bytes
 
 # Ordered list of (stage_number, module_name, artifact_type)
 STAGES: list[tuple[int, str, str]] = [
@@ -19,6 +19,15 @@ STAGES: list[tuple[int, str, str]] = [
     (4, "stage4_build_renderplan",          "RenderPlan"),
     (5, "stage5_render_preview",            "RenderOutput"),
 ]
+
+# Maps stage_name → artifact types that stage reads from the registry.
+STAGE_INPUTS: dict[str, list[str]] = {
+    "stage1_generate_script":           [],
+    "stage2_script_to_shotlist":        ["Script"],
+    "stage3_shotlist_to_assetmanifest": ["ShotList", "Script"],
+    "stage4_build_renderplan":          ["AssetManifest", "ShotList"],
+    "stage5_render_preview":            ["RenderPlan", "AssetManifest"],
+}
 
 
 def compute_run_id(project_config: dict) -> str:
@@ -31,6 +40,63 @@ def compute_run_id(project_config: dict) -> str:
         project_config, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
     return "run-" + hashlib.sha256(content).hexdigest()[:12]
+
+
+def write_run_index(run_dir: Path, stage_results: list[dict]) -> dict:
+    """Compute and write RunIndex.json into run_dir after a completed run.
+
+    - All paths are relative to run_dir (portable).
+    - File hashes are byte-level SHA-256 (not canonical JSON hash).
+    - RunIndex run_id = SHA-256 over sorted set of unique input-file hashes.
+    - Called only when overall pipeline status == "completed".
+    """
+    stages_index: list[dict] = []
+
+    for result in stage_results:
+        stage_name = result["name"]
+        artifact_type = result["artifact_type"]
+
+        # outputs — the artifact JSON written by this stage
+        artifact_file = run_dir / f"{artifact_type}.json"
+        outputs = []
+        if artifact_file.exists():
+            outputs.append({
+                "path": str(artifact_file.relative_to(run_dir)),
+                "sha256": hash_file_bytes(artifact_file),
+            })
+
+        # inputs — sorted for determinism within each stage
+        inputs = []
+        for itype in sorted(STAGE_INPUTS.get(stage_name, [])):
+            ifile = run_dir / f"{itype}.json"
+            if ifile.exists():
+                inputs.append({
+                    "path": str(ifile.relative_to(run_dir)),
+                    "sha256": hash_file_bytes(ifile),
+                })
+
+        stages_index.append({"name": stage_name, "inputs": inputs, "outputs": outputs})
+
+    # RunIndex run_id: SHA-256 of sorted unique input-file hashes (newline-joined)
+    input_sha_set: set[str] = set()
+    for entry in stages_index:
+        for inp in entry["inputs"]:
+            input_sha_set.add(inp["sha256"])
+    index_run_id = hashlib.sha256(
+        "\n".join(sorted(input_sha_set)).encode("utf-8")
+    ).hexdigest()
+
+    run_index: dict = {
+        "schema_id": "RunIndex",
+        "schema_version": "0.0.1",
+        "run_id": index_run_id,
+        "pipeline_version": "phase0",
+        "stages": stages_index,
+    }
+    (run_dir / "RunIndex.json").write_text(
+        json.dumps(run_index, indent=2), encoding="utf-8"
+    )
+    return run_index
 
 
 class PipelineRunner:
@@ -181,4 +247,10 @@ class PipelineRunner:
             "errors": errors,
         }
         self.registry.write_run_summary(self.project_id, self.run_id, summary)
+
+        # Write RunIndex.json only for fully completed runs.
+        if overall_status == "completed":
+            run_dir = self.registry.run_dir(self.project_id, self.run_id)
+            write_run_index(run_dir, stage_results)
+
         return summary
