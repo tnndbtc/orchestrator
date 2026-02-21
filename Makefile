@@ -30,7 +30,10 @@ run-example:
 verify-integration:
 	$(PY) scripts/verify_integration.py
 
+verify-contracts:
+	$(PY) contracts/tools/verify_contracts.py
+
 clean:
 	rm -rf artifacts/ __pycache__ .pytest_cache *.egg-info
 
-.PHONY: install test test-isolated lint run-example verify-integration clean
+.PHONY: install test test-isolated lint run-example verify-integration verify-contracts clean
