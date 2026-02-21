@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -214,6 +215,37 @@ def replay_command(run_dir: str) -> None:
         for err in new_summary.get("errors", []):
             click.echo(f"  Error: {err}", err=True)
         sys.exit(1)
+
+
+@cli.command("write")
+@click.option(
+    "--prompt", required=True,
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    help="Path to StoryPrompt.json",
+)
+@click.option(
+    "--out", required=True,
+    type=click.Path(dir_okay=False),
+    help="Path to write Script.json",
+)
+@click.option(
+    "--writing-agent-cmd",
+    default="writing-agent generate",
+    show_default=True,
+    help="Shell command for the writing agent (split on whitespace)",
+)
+def write_command(prompt: str, out: str, writing_agent_cmd: str) -> None:
+    """Generate Script.json by calling writing-agent with a StoryPrompt."""
+    cmd = shlex.split(writing_agent_cmd) + ["--prompt", prompt, "--out", out]
+    try:
+        proc = subprocess.run(cmd, capture_output=True)
+    except FileNotFoundError:
+        click.echo("ERROR: writing-agent failed")
+        sys.exit(1)
+    if proc.returncode != 0:
+        click.echo("ERROR: writing-agent failed")
+        sys.exit(1)
+
 
 def _flatten_json(data: object, prefix: str = "") -> dict[str, str]:
     """Recursive flattener returning {path: repr(value)}."""
