@@ -23,7 +23,7 @@ _PROJECT = {
 }
 
 # Stable semantic content used across tests
-_CHAR_PACKS = [{"pack_id": "char-alice", "character_id": "alice", "display_name": "Alice"}]
+_CHAR_PACKS = [{"asset_id": "char-alice", "pack_id": "char-alice", "character_id": "alice", "display_name": "Alice", "license_type": "proprietary_cleared"}]
 _TIMING_LOCK = "tlh-stable-abc123"
 
 

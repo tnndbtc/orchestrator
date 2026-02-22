@@ -56,9 +56,11 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
 
     character_packs: list[dict] = [
         {
+            "asset_id": f"char-{cid}",
             "pack_id": f"char-{cid}",
             "character_id": cid,
             "display_name": cid,
+            "license_type": "proprietary_cleared",
             "is_placeholder": True,
         }
         for cid in sorted(seen_character_ids)
@@ -66,9 +68,11 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
 
     backgrounds: list[dict] = [
         {
+            "asset_id": f"bg-{scene_id}",
             "bg_id": f"bg-{scene_id}",
             "scene_id": scene_id,
             "description": description,
+            "license_type": "proprietary_cleared",
             "is_placeholder": True,
         }
         for scene_id, description in seen_scenes.items()

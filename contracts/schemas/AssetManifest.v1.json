@@ -13,14 +13,24 @@
       "type": "array",
       "items": {
         "type": "object",
-        "additionalProperties": true
+        "required": ["asset_id", "license_type"],
+        "additionalProperties": true,
+        "properties": {
+          "asset_id":     {"type": "string"},
+          "license_type": {"type": "string"}
+        }
       }
     },
     "backgrounds": {
       "type": "array",
       "items": {
         "type": "object",
-        "additionalProperties": true
+        "required": ["asset_id", "license_type"],
+        "additionalProperties": true,
+        "properties": {
+          "asset_id":     {"type": "string"},
+          "license_type": {"type": "string"}
+        }
       }
     },
     "vo_items": {

@@ -198,6 +198,44 @@ class TestAssetManifest:
         with pytest.raises(jsonschema.ValidationError):
             validate_artifact(data, "AssetManifest")
 
+    def test_character_pack_with_asset_id_and_license_type_is_valid(self):
+        data = make_valid_asset_manifest()
+        data["character_packs"] = [
+            {"asset_id": "char-hero", "license_type": "proprietary_cleared"}
+        ]
+        validate_artifact(data, "AssetManifest")
+
+    def test_character_pack_missing_asset_id_is_invalid(self):
+        data = make_valid_asset_manifest()
+        data["character_packs"] = [{"license_type": "proprietary_cleared"}]
+        with pytest.raises(jsonschema.ValidationError):
+            validate_artifact(data, "AssetManifest")
+
+    def test_character_pack_missing_license_type_is_invalid(self):
+        data = make_valid_asset_manifest()
+        data["character_packs"] = [{"asset_id": "char-hero"}]
+        with pytest.raises(jsonschema.ValidationError):
+            validate_artifact(data, "AssetManifest")
+
+    def test_background_with_asset_id_and_license_type_is_valid(self):
+        data = make_valid_asset_manifest()
+        data["backgrounds"] = [
+            {"asset_id": "bg-scene-001", "license_type": "proprietary_cleared"}
+        ]
+        validate_artifact(data, "AssetManifest")
+
+    def test_background_missing_asset_id_is_invalid(self):
+        data = make_valid_asset_manifest()
+        data["backgrounds"] = [{"license_type": "proprietary_cleared"}]
+        with pytest.raises(jsonschema.ValidationError):
+            validate_artifact(data, "AssetManifest")
+
+    def test_background_missing_license_type_is_invalid(self):
+        data = make_valid_asset_manifest()
+        data["backgrounds"] = [{"asset_id": "bg-scene-001"}]
+        with pytest.raises(jsonschema.ValidationError):
+            validate_artifact(data, "AssetManifest")
+
 
 # ---------------------------------------------------------------------------
 # RenderPlan
