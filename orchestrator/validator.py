@@ -15,7 +15,7 @@ ARTIFACT_SCHEMAS: dict[str, str] = {
     "RenderPackage": "RenderPackage.v1.json",
 }
 
-SCHEMAS_DIR = Path(__file__).parent.parent / "schemas"
+SCHEMAS_DIR = Path(__file__).parent.parent / "contracts" / "schemas"
 
 
 def validate_artifact(data: dict, artifact_type: str) -> None:

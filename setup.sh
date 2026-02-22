@@ -49,6 +49,27 @@ do_install_and_verify() {
 do_test() {
     printf '\n[2] Running tests...\n'
     run_cmd "$PYTHON" -m pytest tests/ -v
+    printf '\n    Running integration verification...\n'
+    if [ -n "${VIDEO_RENDERER_REPO:-}" ]; then
+        run_cmd "$PYTHON" scripts/verify_integration.py
+    else
+        printf '    SKIP  verify_integration.py (VIDEO_RENDERER_REPO not set)\n'
+    fi
+    printf '\n    Running contract verification...\n'
+    run_cmd "$PYTHON" contracts/tools/verify_contracts.py
+    printf '\n    Running lint (syntax check)...\n'
+    run_cmd "$PYTHON" -m py_compile \
+        orchestrator/cli.py \
+        orchestrator/pipeline.py \
+        orchestrator/registry.py \
+        orchestrator/validator.py \
+        orchestrator/utils/hashing.py \
+        orchestrator/stages/stage1_generate_script.py \
+        orchestrator/stages/stage2_script_to_shotlist.py \
+        orchestrator/stages/stage3_shotlist_to_assetmanifest.py \
+        orchestrator/stages/stage4_build_renderplan.py \
+        orchestrator/stages/stage5_render_preview.py
+    printf '\n    All checks passed.\n'
 }
 
 # ---------------------------------------------------------------------------

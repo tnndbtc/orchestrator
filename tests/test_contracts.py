@@ -28,7 +28,7 @@ _spec.loader.exec_module(vc)  # type: ignore[union-attr]
 # Paths
 # ---------------------------------------------------------------------------
 CONTRACTS_DIR = Path(__file__).parent.parent / "contracts"
-SCHEMAS_DIR = Path(__file__).parent.parent / "schemas"
+SCHEMAS_DIR = Path(__file__).parent.parent / "contracts" / "schemas"
 
 
 # ---------------------------------------------------------------------------
