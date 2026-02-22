@@ -1,9 +1,10 @@
 """Tests for artifact schema validation (all 5 artifact types)."""
 
+import json
 import pytest
 import jsonschema
 
-from orchestrator.validator import validate_artifact
+from orchestrator.validator import ARTIFACT_SCHEMAS, SCHEMAS_DIR, validate_artifact
 
 
 # ---------------------------------------------------------------------------
@@ -13,6 +14,7 @@ from orchestrator.validator import validate_artifact
 
 def make_valid_script() -> dict:
     return {
+        "schema_id": "Script",
         "schema_version": "1.0.0",
         "script_id": "test-script-001",
         "project_id": "test-project",
@@ -30,6 +32,7 @@ def make_valid_script() -> dict:
 
 def make_valid_shotlist() -> dict:
     return {
+        "schema_id": "ShotList",
         "schema_version": "1.0.0",
         "shotlist_id": "test-shotlist-001",
         "script_id": "test-script-001",
@@ -56,6 +59,7 @@ def make_valid_shotlist() -> dict:
 
 def make_valid_asset_manifest() -> dict:
     return {
+        "schema_id": "AssetManifest",
         "schema_version": "1.0.0",
         "manifest_id": "test-manifest-001",
         "project_id": "test-project",
@@ -75,6 +79,7 @@ def make_valid_asset_manifest() -> dict:
 
 def make_valid_render_plan() -> dict:
     return {
+        "schema_id": "RenderPlan",
         "schema_version": "1.0.0",
         "plan_id": "test-plan-001",
         "project_id": "test-project",
@@ -98,6 +103,7 @@ def make_valid_render_plan() -> dict:
 
 def make_valid_render_output() -> dict:
     return {
+        "schema_id": "RenderOutput",
         "schema_version": "1.0.0",
         "output_id": "test-output-001",
         "video_uri": "file:///tmp/test/output.mp4",
@@ -242,3 +248,36 @@ class TestRenderOutput:
         del data["output_id"]
         with pytest.raises(jsonschema.ValidationError):
             validate_artifact(data, "RenderOutput")
+
+
+# ---------------------------------------------------------------------------
+# Schema structure — pipeline contract agreement
+# ---------------------------------------------------------------------------
+
+
+# Artifact types that _enforce_schema_metadata checks at runtime.
+# Both schema_id and schema_version must be in required so that external
+# producers (e.g. world-engine) are rejected at the schema level, not only
+# at the pipeline gate.
+_PIPELINE_ARTIFACT_TYPES = [
+    "Script",
+    "ShotList",
+    "AssetManifest",
+    "RenderPlan",
+    "RenderOutput",
+]
+
+
+def test_pipeline_required_fields_in_all_schemas() -> None:
+    """Every pipeline artifact schema must list schema_id and schema_version
+    as required fields, consistent with what _enforce_schema_metadata enforces."""
+    for artifact_type in _PIPELINE_ARTIFACT_TYPES:
+        schema_file = SCHEMAS_DIR / ARTIFACT_SCHEMAS[artifact_type]
+        schema = json.loads(schema_file.read_bytes())
+        required = schema.get("required", [])
+        assert "schema_id" in required, (
+            f"{artifact_type}: 'schema_id' missing from required"
+        )
+        assert "schema_version" in required, (
+            f"{artifact_type}: 'schema_version' missing from required"
+        )

@@ -59,6 +59,7 @@ PROJECT_CONFIG: dict = {
 }
 
 VALID_SCRIPT: dict = {
+    "schema_id": "Script",
     "schema_version": "1.0.0",
     "script_id": "test-script-001",
     "project_id": "test-project",

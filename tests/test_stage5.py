@@ -29,6 +29,7 @@ def _minimal_ro(
 ) -> dict:
     """Return a schema-valid RenderOutput with configurable URIs."""
     return {
+        "schema_id": "RenderOutput",
         "schema_version": "1.0.0",
         "output_id": "test-output-001",
         "video_uri": video_uri,

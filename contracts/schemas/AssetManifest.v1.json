@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "AssetManifest",
   "type": "object",
-  "required": ["schema_version", "manifest_id", "project_id", "shotlist_ref", "character_packs", "backgrounds", "vo_items"],
+  "required": ["schema_id", "schema_version", "manifest_id", "project_id", "shotlist_ref", "character_packs", "backgrounds", "vo_items"],
   "additionalProperties": true,
   "properties": {
     "schema_version": {"type": "string", "const": "1.0.0"},

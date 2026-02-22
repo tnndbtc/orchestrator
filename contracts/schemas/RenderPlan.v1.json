@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "RenderPlan",
   "type": "object",
-  "required": ["schema_version", "plan_id", "project_id", "manifest_ref", "timing_lock_hash", "profile", "resolution", "aspect_ratio", "fps", "resolved_assets"],
+  "required": ["schema_id", "schema_version", "plan_id", "project_id", "manifest_ref", "timing_lock_hash", "profile", "resolution", "aspect_ratio", "fps", "resolved_assets"],
   "additionalProperties": true,
   "properties": {
     "schema_version": {"type": "string", "const": "1.0.0"},
