@@ -1,75 +1,78 @@
-"""Stage 3: Derive AssetManifest from ShotList + Script."""
+"""Stage 3: Derive AssetManifest from ShotList."""
 
 from ..registry import ArtifactRegistry
 
 
 def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
-    """Build AssetManifest from ShotList and Script.
+    """Build AssetManifest from ShotList alone.
 
-    Reads:  ShotList.json, Script.json
+    Reads:  ShotList.json
     Writes: AssetManifest.json
 
-    Rules:
-    - Unique characters from script dialogue → character_packs (is_placeholder=True)
-    - One background per unique scene_id (from ShotList shot order)
-    - One vo_item per dialogue action (license_type="generated_local")
+    All asset requirements are derived from the ShotList shots:
+    - characters[].character_id  → character_packs (unique, sorted)
+    - scene_id (first-seen order) + environment_notes → backgrounds
+    - audio_intent.vo_speaker_id + vo_text → vo_items (only when both present)
+
+    Script.json is NOT read.  This lets the orchestrator accept a ShotList
+    produced directly by world-engine (--from-stage 3) without also requiring
+    a Script artifact in the run directory.
 
     Returns the artifact dict.
     """
     project_id = project_config["id"]
     shotlist = registry.read_artifact(project_id, run_id, "ShotList")
-    script = registry.read_artifact(project_id, run_id, "Script")
 
-    # Build scene_id → location lookup from script
-    scene_locations: dict[str, str] = {
-        scene["scene_id"]: scene.get("location", "UNKNOWN")
-        for scene in script["scenes"]
-    }
-
-    # Collect unique characters and VO items from script
-    characters: set[str] = set()
+    seen_character_ids: dict[str, None] = {}   # ordered set (insertion order)
+    seen_scenes: dict[str, str] = {}            # scene_id → description (first-seen)
     vo_items: list[dict] = []
-    for scene in script["scenes"]:
-        scene_id = scene["scene_id"]
-        for action in scene.get("actions", []):
-            if action.get("type") == "dialogue":
-                char = action.get("character", "UNKNOWN")
-                characters.add(char)
-                speaker_id = char.lower().replace(" ", "_")
-                vo_items.append(
-                    {
-                        "item_id": f"vo-{scene_id}-{speaker_id}-{len(vo_items):03d}",
-                        "speaker_id": speaker_id,
-                        "text": action.get("text", ""),
-                        "license_type": "generated_local",
-                    }
-                )
+
+    for shot in shotlist.get("shots", []):
+        scene_id = shot["scene_id"]
+
+        # Background — one entry per unique scene, preserve first-seen shot order
+        if scene_id not in seen_scenes:
+            seen_scenes[scene_id] = shot.get("environment_notes", "")
+
+        # Characters — from per-shot character list
+        for char in shot.get("characters", []):
+            cid = char["character_id"]
+            if cid not in seen_character_ids:
+                seen_character_ids[cid] = None
+
+        # VO item — only when both speaker and text are present
+        intent = shot.get("audio_intent", {})
+        speaker_id = intent.get("vo_speaker_id")
+        vo_text = intent.get("vo_text")
+        if speaker_id and vo_text:
+            vo_items.append(
+                {
+                    "item_id": f"vo-{scene_id}-{speaker_id}-{len(vo_items):03d}",
+                    "speaker_id": speaker_id,
+                    "text": vo_text,
+                    "license_type": "generated_local",
+                }
+            )
 
     character_packs: list[dict] = [
         {
-            "pack_id": f"char-{char.lower().replace(' ', '_')}",
-            "character_id": char.lower().replace(" ", "_"),
-            "display_name": char,
+            "pack_id": f"char-{cid}",
+            "character_id": cid,
+            "display_name": cid,
             "is_placeholder": True,
         }
-        for char in sorted(characters)
+        for cid in sorted(seen_character_ids)
     ]
 
-    # One background per unique scene (preserving first-seen order from shots)
-    seen_scenes: set[str] = set()
-    backgrounds: list[dict] = []
-    for shot in shotlist["shots"]:
-        scene_id = shot["scene_id"]
-        if scene_id not in seen_scenes:
-            seen_scenes.add(scene_id)
-            backgrounds.append(
-                {
-                    "bg_id": f"bg-{scene_id}",
-                    "scene_id": scene_id,
-                    "description": scene_locations.get(scene_id, "UNKNOWN"),
-                    "is_placeholder": True,
-                }
-            )
+    backgrounds: list[dict] = [
+        {
+            "bg_id": f"bg-{scene_id}",
+            "scene_id": scene_id,
+            "description": description,
+            "is_placeholder": True,
+        }
+        for scene_id, description in seen_scenes.items()
+    ]
 
     manifest: dict = {
         "schema_id": "AssetManifest",

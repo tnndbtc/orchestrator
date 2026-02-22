@@ -24,7 +24,7 @@ STAGES: list[tuple[int, str, str]] = [
 STAGE_INPUTS: dict[str, list[str]] = {
     "stage1_generate_script":           [],
     "stage2_script_to_shotlist":        ["Script"],
-    "stage3_shotlist_to_assetmanifest": ["ShotList", "Script"],
+    "stage3_shotlist_to_assetmanifest": ["ShotList"],
     "stage4_build_renderplan":          ["AssetManifest", "ShotList"],
     "stage5_render_preview":            ["RenderPlan", "AssetManifest"],
 }
