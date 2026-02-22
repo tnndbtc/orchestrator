@@ -169,15 +169,22 @@ def run_checks(contracts_dir: Path) -> tuple[list[str], int]:
     else:
         allowlist = {}
 
+    all_errors: list[str] = []
+    results: list[tuple[str, list[str]]] = []
+
+    # Check 0: protocol_version.json must be present
+    protocol_version_path = compat_dir / "protocol_version.json"
+    if not protocol_version_path.exists():
+        pv_error = "MISSING: compat/protocol_version.json"
+        all_errors.append(pv_error)
+        print(f"FAIL   {pv_error}")
+
     if not goldens_dir.exists():
-        return [], 0
+        return all_errors, 0
 
     # Collect all goldens
     golden_paths = sorted(goldens_dir.rglob("*.json"))
     golden_count = len(golden_paths)
-
-    all_errors: list[str] = []
-    results: list[tuple[str, list[str]]] = []
 
     for golden_path in golden_paths:
         rel_path = str(golden_path.relative_to(contracts_dir))

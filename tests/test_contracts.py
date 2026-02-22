@@ -141,6 +141,20 @@ def test_file_uri_placeholder_passes() -> None:
 # T5 — non-placeholder file:// URIs fail determinism
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# T6 — Missing protocol_version.json fails
+# ---------------------------------------------------------------------------
+
+def test_missing_protocol_version_fails(tmp_path: Path) -> None:
+    """Missing compat/protocol_version.json must be reported as MISSING."""
+    contracts_dir = _make_tmp_contracts(tmp_path)
+    # _make_tmp_contracts does not create protocol_version.json
+    errors, _ = vc.run_checks(contracts_dir)
+    assert any("MISSING" in e for e in errors), (
+        f"Expected MISSING error, got: {errors}"
+    )
+
+
 def test_file_uri_nonplaceholder_fails() -> None:
     """file:// URIs that are not file:///placeholder[/...] must be flagged."""
     bad_uris = [
