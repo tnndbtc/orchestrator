@@ -267,7 +267,7 @@ class TestPipelineForceReruns:
 
 class TestFromStageReruns:
     def test_from_stage_reruns_from_n(self, tmp_path, mock_stage5):
-        """from_stage=3 skips stages 1–2, re-runs stages 3–5."""
+        """from_stage=3, to_last_stage=True skips stages 1–2, re-runs stages 3–5."""
         registry = ArtifactRegistry(tmp_path)
         run_id = compute_run_id(PROJECT_CONFIG)
 
@@ -296,6 +296,7 @@ class TestFromStageReruns:
             artifacts_dir=tmp_path,
             force=True,
             from_stage=3,
+            to_last_stage=True,
             run_id=run_id,
         )
         summary2 = runner2.run()

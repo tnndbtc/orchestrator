@@ -199,11 +199,19 @@ class PipelineRunner:
     --------------------
     A stage is RUN if:
         stage_num >= from_stage
+        AND stage_num <= to_stage  (to_stage = from_stage unless to_last_stage=True)
         AND (force is True OR artifact does not exist / is schema-invalid)
 
     A stage is SKIPPED if:
         stage_num < from_stage
+        OR stage_num > to_stage
         OR (not force AND artifact exists_and_valid)
+
+    Default behaviour
+    -----------------
+    - from_stage=1 (default): run all stages; to_last_stage is ignored.
+    - from_stage=N (explicit): run only stage N by default.
+    - from_stage=N, to_last_stage=True: run stages N through the last stage.
     """
 
     def __init__(
@@ -213,6 +221,7 @@ class PipelineRunner:
         artifacts_dir: str | Path,
         force: bool = False,
         from_stage: int = 1,
+        to_last_stage: bool = False,
         run_id: Optional[str] = None,
         project_path: str = "",
     ) -> None:
@@ -221,6 +230,7 @@ class PipelineRunner:
         self.artifacts_dir = Path(artifacts_dir)
         self.force = force
         self.from_stage = from_stage
+        self.to_last_stage = to_last_stage
         self.run_id = run_id or compute_run_id(project_config)
         self.project_id: str = project_config["id"]
         self.project_path = project_path
@@ -232,6 +242,11 @@ class PipelineRunner:
     def _should_run(self, stage_num: int, artifact_type: str) -> bool:
         """Return True if the stage should execute (not be skipped)."""
         if stage_num < self.from_stage:
+            return False
+        # When a specific starting stage is given without --to-last-stage,
+        # stop after that single stage.  from_stage=1 (the default) always
+        # runs all stages so the normal `orchestrator run` flow is unchanged.
+        if self.from_stage > 1 and not self.to_last_stage and stage_num > self.from_stage:
             return False
         if self.force:
             return True

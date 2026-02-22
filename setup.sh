@@ -32,6 +32,7 @@ run_cmd() {
 }
 
 PYTHON="$(find_python)"
+ORCHESTRATOR="$(dirname "$(command -v "$PYTHON")")/orchestrator"
 
 # ---------------------------------------------------------------------------
 # Menu actions
@@ -42,7 +43,7 @@ do_install_and_verify() {
     printf '    Using: %s\n' "$PYTHON"
     run_cmd "$PYTHON" -m pip install -e ".[dev]"
     printf '\n    Running example pipeline to verify install...\n'
-    run_cmd "$PYTHON" -m orchestrator.cli run --project examples/phase0/project.json
+    run_cmd "$ORCHESTRATOR" run --project examples/phase0/project.json
     printf '    Done.\n'
 }
 
@@ -75,7 +76,8 @@ do_show_usage() {
     printf '      [--artifacts-dir ./artifacts]  where to store all run artifacts\n'
     printf '      [--run-id  <id>]               override the auto-generated run ID\n'
     printf '      [--force]                      re-run all stages (ignore cache)\n'
-    printf '      [--from-stage 1-5]             skip stages before N; resume from N\n'
+    printf '      [--from-stage 1-5]             run only stage N (skips all others)\n'
+    printf '      [--to-last-stage]              with --from-stage N, run N through last\n'
     printf '\n'
     printf '    Runs the full 5-stage pipeline in sequence:\n'
     printf '      Stage 1  generate_script        → Script.json\n'
@@ -90,12 +92,17 @@ do_show_usage() {
     printf '    Example — full run:\n'
     printf '      orchestrator run --project examples/phase0/project.json\n'
     printf '\n'
-    printf '    Example — start from an existing ShotList (stages 1-2 skipped):\n'
+    printf '    Example — run only stage 3 (ShotList → AssetManifest):\n'
     printf '      orchestrator run \\\n'
     printf '        --project examples/phase0/project.json \\\n'
     printf '        --from-stage 3\n'
     printf '\n'
-    printf '    Example — force re-run from stage 3 when artifacts already exist:\n'
+    printf '    Example — run stage 3 through the last stage:\n'
+    printf '      orchestrator run \\\n'
+    printf '        --project examples/phase0/project.json \\\n'
+    printf '        --from-stage 3 --to-last-stage\n'
+    printf '\n'
+    printf '    Example — force re-run of stage 3 only (artifact already exists):\n'
     printf '      orchestrator run \\\n'
     printf '        --project examples/phase0/project.json \\\n'
     printf '        --from-stage 3 --force\n'
@@ -234,6 +241,81 @@ do_show_usage() {
     printf '══════════════════════════════════════════════════════════════════\n\n'
 }
 
+do_test_from_stage_workflows() {
+    # Run orchestrator with --from-stage 3 and --from-stage 4 using the e2e golden
+    # ShotList/AssetManifest from contracts/.  Each invocation runs only the single
+    # named stage (--to-last-stage is NOT set), so each test is independent.
+
+    GOLDENS="contracts/goldens/e2e/example_episode"
+    PROJECT="examples/phase0/project.json"
+    PROJECT_ID="phase0-demo"
+    TMP_DIR="$(mktemp -d)"
+    WORKFLOW_ERRORS=0
+
+    printf '\n── Workflow A: --from-stage 3  (ShotList → AssetManifest only) ──────────\n'
+
+    RUN_ID_A="run-s3-goldens-test"
+    RUN_DIR_A="$TMP_DIR/$PROJECT_ID/$RUN_ID_A"
+    run_cmd mkdir -p "$RUN_DIR_A"
+    run_cmd cp "$GOLDENS/ShotList.json" "$RUN_DIR_A/ShotList.json"
+
+    printf '  + orchestrator run --project %s \\\n' "$PROJECT"
+    printf '        --artifacts-dir %s \\\n' "$TMP_DIR"
+    printf '        --run-id %s \\\n' "$RUN_ID_A"
+    printf '        --from-stage 3\n'
+    "$ORCHESTRATOR" run \
+        --project "$PROJECT" \
+        --artifacts-dir "$TMP_DIR" \
+        --run-id "$RUN_ID_A" \
+        --from-stage 3
+
+    if [ -f "$RUN_DIR_A/AssetManifest.json" ]; then
+        printf '  ✓  AssetManifest.json produced\n'
+    else
+        printf '  ✗  AssetManifest.json NOT produced — stage 3 failed\n'
+        WORKFLOW_ERRORS=$((WORKFLOW_ERRORS + 1))
+    fi
+    if [ -f "$RUN_DIR_A/RenderPlan.json" ]; then
+        printf '  ✗  RenderPlan.json unexpectedly produced (stage 4 should be skipped)\n'
+        WORKFLOW_ERRORS=$((WORKFLOW_ERRORS + 1))
+    else
+        printf '  ✓  RenderPlan.json absent (stage 4 correctly skipped)\n'
+    fi
+
+    printf '\n── Workflow B: --from-stage 4  (AssetManifest + ShotList → RenderPlan) ──\n'
+
+    RUN_ID_B="run-s4-goldens-test"
+    RUN_DIR_B="$TMP_DIR/$PROJECT_ID/$RUN_ID_B"
+    run_cmd mkdir -p "$RUN_DIR_B"
+    run_cmd cp "$GOLDENS/ShotList.json"     "$RUN_DIR_B/ShotList.json"
+    run_cmd cp "$GOLDENS/AssetManifest.json" "$RUN_DIR_B/AssetManifest.json"
+
+    printf '  + orchestrator run --project %s \\\n' "$PROJECT"
+    printf '        --artifacts-dir %s \\\n' "$TMP_DIR"
+    printf '        --run-id %s \\\n' "$RUN_ID_B"
+    printf '        --from-stage 4\n'
+    "$ORCHESTRATOR" run \
+        --project "$PROJECT" \
+        --artifacts-dir "$TMP_DIR" \
+        --run-id "$RUN_ID_B" \
+        --from-stage 4
+
+    if [ -f "$RUN_DIR_B/RenderPlan.json" ]; then
+        printf '  ✓  RenderPlan.json produced\n'
+    else
+        printf '  ✗  RenderPlan.json NOT produced — stage 4 failed\n'
+        WORKFLOW_ERRORS=$((WORKFLOW_ERRORS + 1))
+    fi
+
+    rm -rf "$TMP_DIR"
+
+    if [ "$WORKFLOW_ERRORS" -gt 0 ]; then
+        printf '\n  ✗  From-stage workflow tests FAILED (%d error(s))\n' "$WORKFLOW_ERRORS"
+        exit 1
+    fi
+    printf '\n  ✓  From-stage workflow tests passed\n'
+}
+
 do_test() {
     printf '\n[2] Running tests...\n'
     run_cmd "$PYTHON" -m pytest tests/ -v
@@ -257,6 +339,8 @@ do_test() {
         orchestrator/stages/stage3_shotlist_to_assetmanifest.py \
         orchestrator/stages/stage4_build_renderplan.py \
         orchestrator/stages/stage5_render_preview.py
+    printf '\n    Running from-stage workflow tests...\n'
+    do_test_from_stage_workflows
     printf '\n    All checks passed.\n'
 }
 

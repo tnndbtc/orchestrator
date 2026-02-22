@@ -55,12 +55,19 @@ def cli() -> None:
     show_default=True,
     help="Start execution from stage N (1–5); earlier stages are skipped",
 )
+@click.option(
+    "--to-last-stage",
+    is_flag=True,
+    default=False,
+    help="When combined with --from-stage N, run all stages from N to the last stage",
+)
 def run_command(
     project: str,
     artifacts_dir: str,
     run_id: str | None,
     force: bool,
     from_stage: int,
+    to_last_stage: bool,
 ) -> None:
     """Run the orchestrator pipeline for a project."""
     project_path = Path(project).resolve()
@@ -73,6 +80,7 @@ def run_command(
         artifacts_dir=artifacts_dir,
         force=force,
         from_stage=from_stage,
+        to_last_stage=to_last_stage,
         run_id=run_id,
         project_path=str(project_path),
     )
@@ -81,8 +89,10 @@ def run_command(
     click.echo(f"   Project: {project_config.get('title', project_config['id'])}")
     if force:
         click.echo("   Mode   : force (all stages will re-run)")
+    elif from_stage > 1 and to_last_stage:
+        click.echo(f"   Mode   : from-stage {from_stage} to last")
     elif from_stage > 1:
-        click.echo(f"   Mode   : from-stage {from_stage}")
+        click.echo(f"   Mode   : stage {from_stage} only")
     click.echo()
 
     summary = runner.run()
@@ -834,3 +844,7 @@ def investigate_determinism_command(project: str, out_dir: str) -> None:
         click.echo(f"FAIL: {len(diffs)} diff(s) found")
         sys.exit(1)
     click.echo("OK: determinism pass")
+
+
+if __name__ == "__main__":
+    cli()
