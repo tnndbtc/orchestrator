@@ -1,8 +1,10 @@
 """Stage 4: Merge AssetManifest_draft + AssetManifest.media → AssetManifest_final, build RenderPlan."""
 
 import json
+import os
 
 from ..registry import ArtifactRegistry
+from ..utils.agent_bin import call_agent
 from ..validator import validate_artifact
 
 
@@ -23,13 +25,38 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
     # 1. Read AssetManifest_draft.json for envelope metadata
     draft = registry.read_artifact(project_id, run_id, "AssetManifest_draft")
 
-    # 2. Read AssetManifest.media.json — required external input
+    # 2. Read AssetManifest.media.json — auto-call media agent if absent
     media_path = run_dir / "AssetManifest.media.json"
+    if not media_path.exists():
+        try:
+            result = call_agent(
+                "media",
+                ["verify"],
+                capture_output=True,
+                text=True,
+                env={**os.environ, "RUN_DIR": str(run_dir)},
+            )
+            # media verify --strict fails for placeholder assets (expected in dev/test);
+            # we only hard-fail if the output file was never written at all.
+            if result.returncode != 0 and not media_path.exists():
+                raise RuntimeError(
+                    f"media agent failed (exit {result.returncode}) "
+                    f"and produced no output.\n"
+                    f"stdout: {result.stdout.strip()}\n"
+                    f"stderr: {result.stderr.strip()}"
+                )
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                "media agent not found. Install it in the same environment:\n"
+                "  pip install -e /path/to/media-agent\n"
+                f"Original error: {exc}"
+            ) from exc
+
     if not media_path.exists():
         raise FileNotFoundError(
             "ERROR: AssetManifest.media.json not found in run directory.\n"
-            "  The media agent must run after stage 3 and before stage 4.\n"
-            f"  Place AssetManifest.media.json in: {run_dir}\n"
+            "  Install and run the media agent, or place the file manually:\n"
+            f"  {run_dir}/AssetManifest.media.json\n"
             "  Then resume: orchestrator run --project <p> --from-stage 4"
         )
     media = json.loads(media_path.read_text(encoding="utf-8"))

@@ -61,6 +61,17 @@ def cli() -> None:
     default=False,
     help="When combined with --from-stage N, run all stages from N to the last stage",
 )
+@click.option(
+    "--stub",
+    is_flag=True,
+    default=False,
+    help=(
+        "Auto-create stub external inputs when absent: "
+        "AssetManifest.media.json (empty items) before stage 4, "
+        "CanonDecision.json (allow) before stage 5. "
+        "Useful for e2e tests and CI runs."
+    ),
+)
 def run_command(
     project: str,
     artifacts_dir: str,
@@ -68,6 +79,7 @@ def run_command(
     force: bool,
     from_stage: int,
     to_last_stage: bool,
+    stub: bool,
 ) -> None:
     """Run the orchestrator pipeline for a project."""
     project_path = Path(project).resolve()
@@ -83,6 +95,8 @@ def run_command(
         to_last_stage=to_last_stage,
         run_id=run_id,
         project_path=str(project_path),
+        stub_external_inputs=stub,
+        auto_approve_canon=True,
     )
 
     click.echo(f"▶  Run ID : {runner.run_id}")

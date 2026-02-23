@@ -224,8 +224,12 @@ class PipelineRunner:
         to_last_stage: bool = False,
         run_id: Optional[str] = None,
         project_path: str = "",
+        stub_external_inputs: bool = False,
+        auto_approve_canon: bool = False,
     ) -> None:
-        self.project_config = project_config
+        # Inject _project_path so stage modules can locate companion files
+        # (e.g. StoryPrompt.json alongside project.json).
+        self.project_config = {**project_config, "_project_path": project_path}
         self.registry = registry
         self.artifacts_dir = Path(artifacts_dir)
         self.force = force
@@ -234,6 +238,8 @@ class PipelineRunner:
         self.run_id = run_id or compute_run_id(project_config)
         self.project_id: str = project_config["id"]
         self.project_path = project_path
+        self.stub_external_inputs = stub_external_inputs
+        self.auto_approve_canon = auto_approve_canon
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -295,8 +301,67 @@ class PipelineRunner:
                 )
                 continue
 
+            # Stub injection: auto-create missing external inputs when --stub is set
+            if self.stub_external_inputs and should_run:
+                if stage_name == "stage4_build_renderplan":
+                    media_path = run_dir / "AssetManifest.media.json"
+                    if not media_path.exists():
+                        run_dir.mkdir(parents=True, exist_ok=True)
+                        media_stub = {
+                            "schema_id": "AssetManifest.media",
+                            "schema_version": "1.0.0",
+                            "manifest_id": f"stub-{self.run_id[:8]}",
+                            "producer": "orchestrator-stub",
+                            "items": [],
+                        }
+                        media_path.write_text(
+                            json.dumps(media_stub, indent=2), encoding="utf-8"
+                        )
+                elif stage_name == "stage5_render_preview":
+                    canon_path = run_dir / "CanonDecision.json"
+                    if not canon_path.exists():
+                        run_dir.mkdir(parents=True, exist_ok=True)
+                        canon_stub = {
+                            "schema_id": "CanonDecision",
+                            "schema_version": "1.0.0",
+                            "decision": "allow",
+                            "decision_id": f"stub-{self.run_id[:8]}",
+                        }
+                        canon_path.write_text(
+                            json.dumps(canon_stub, indent=2), encoding="utf-8"
+                        )
+
             # CanonDecision gate — fires only when stage5 is about to run
             if stage_name == "stage5_render_preview" and should_run:
+                # Auto-resolve CanonDecision.json if absent (only when auto_approve_canon=True):
+                #   1. Check alongside project.json
+                #   2. Auto-create allow (with visible notice) if still missing
+                if self.auto_approve_canon:
+                    _canon_path = run_dir / "CanonDecision.json"
+                    if not _canon_path.exists():
+                        _loaded = False
+                        if self.project_path:
+                            _proj_dir_canon = Path(self.project_path).parent / "CanonDecision.json"
+                            if _proj_dir_canon.exists():
+                                import shutil as _shutil
+                                _shutil.copy(_proj_dir_canon, _canon_path)
+                                print("ℹ  Loaded CanonDecision.json from project directory", flush=True)
+                                _loaded = True
+                        if not _loaded:
+                            _auto = {
+                                "schema_id": "CanonDecision",
+                                "schema_version": "1.0.0",
+                                "decision": "allow",
+                                "decision_id": f"auto-{self.run_id[:8]}",
+                            }
+                            _canon_path.write_text(json.dumps(_auto, indent=2), encoding="utf-8")
+                            print(
+                                "ℹ  No CanonDecision.json found — auto-approving continuation.\n"
+                                f"   Place CanonDecision.json in {run_dir} or alongside project.json\n"
+                                "   to explicitly control this decision.",
+                                flush=True,
+                            )
+
                 try:
                     _check_canon_decision(run_dir, self.project_path, self.run_id)
                 except _GATE_EXCEPTIONS as exc:

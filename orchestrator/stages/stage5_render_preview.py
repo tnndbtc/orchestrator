@@ -53,13 +53,23 @@ def run(project_config, run_id, registry):
         )
         return ro
 
-    # 2) Resolve renderer from env var
+    # 2) Resolve renderer: env var → installed video-agent package
     video_repo = os.environ.get("VIDEO_RENDERER_REPO")
     if not video_repo:
+        try:
+            import tools.cli as _video_tools_cli
+            _pkg_root = Path(_video_tools_cli.__file__).resolve().parent.parent
+            if (_pkg_root / "scripts" / "render_from_orchestrator.py").exists():
+                video_repo = str(_pkg_root)
+        except (ImportError, Exception):
+            pass
+
+    if not video_repo:
         raise EnvironmentError(
-            "Environment variable VIDEO_RENDERER_REPO is not set. "
-            "Set it to the root of the video renderer repository, e.g.:\n"
-            "  export VIDEO_RENDERER_REPO=/path/to/video"
+            "Cannot locate the video renderer.\n"
+            "Either pip install the video-agent package or set VIDEO_RENDERER_REPO:\n"
+            "  pip install -e /path/to/video-agent\n"
+            "  export VIDEO_RENDERER_REPO=/path/to/video-agent"
         )
     renderer        = Path(video_repo) / "scripts" / "render_from_orchestrator.py"
     renderer_python = os.environ.get("VIDEO_RENDERER_PYTHON", sys.executable)

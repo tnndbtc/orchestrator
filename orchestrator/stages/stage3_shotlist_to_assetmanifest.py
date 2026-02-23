@@ -1,5 +1,7 @@
 """Stage 3: Derive AssetManifest_draft from ShotList."""
 
+import json
+
 from ..registry import ArtifactRegistry
 
 
@@ -101,4 +103,15 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
             "stage": "stage3_shotlist_to_assetmanifest",
         },
     )
+
+    # Write AssetManifest.json as a bridge file for the media agent.
+    # media verify reads $RUN_DIR/AssetManifest.json (not AssetManifest_draft.json).
+    # The content is identical; only the schema_id is updated to match the filename stem.
+    run_dir = registry.run_dir(project_id, run_id)
+    bridge = {**manifest, "schema_id": "AssetManifest"}
+    (run_dir / "AssetManifest.json").write_text(
+        json.dumps(bridge, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
     return manifest
