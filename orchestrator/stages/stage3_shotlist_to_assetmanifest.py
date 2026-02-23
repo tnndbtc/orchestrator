@@ -5,6 +5,16 @@ import json
 from ..registry import ArtifactRegistry
 
 
+def _to_slug(s: str) -> str:
+    """Normalise an identifier to lowercase-hyphen form.
+
+    Mirrors the normalisation applied by the media-agent's ``_normalize_id()``
+    so that asset IDs are byte-identical in every artifact produced within a run
+    (AssetManifest.json, AssetManifest.media.json, RenderPlan.json).
+    """
+    return s.strip().lower().replace(" ", "-").replace("_", "-")
+
+
 def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
     """Build AssetManifest_draft from ShotList alone.
 
@@ -49,8 +59,8 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
         if speaker_id and vo_text:
             vo_items.append(
                 {
-                    "item_id": f"vo-{scene_id}-{speaker_id}-{len(vo_items):03d}",
-                    "speaker_id": speaker_id,
+                    "item_id": f"vo-{_to_slug(scene_id)}-{_to_slug(speaker_id)}-{len(vo_items):03d}",
+                    "speaker_id": _to_slug(speaker_id),
                     "text": vo_text,
                     "license_type": "generated_local",
                 }
@@ -58,9 +68,9 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
 
     character_packs: list[dict] = [
         {
-            "asset_id": f"char-{cid}",
-            "pack_id": f"char-{cid}",
-            "character_id": cid,
+            "asset_id": f"char-{_to_slug(cid)}",
+            "pack_id": f"char-{_to_slug(cid)}",
+            "character_id": _to_slug(cid),
             "display_name": cid,
             "license_type": "proprietary_cleared",
             "is_placeholder": True,
@@ -70,8 +80,8 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
 
     backgrounds: list[dict] = [
         {
-            "asset_id": f"bg-{scene_id}",
-            "bg_id": f"bg-{scene_id}",
+            "asset_id": f"bg-{_to_slug(scene_id)}",
+            "bg_id": f"bg-{_to_slug(scene_id)}",
             "scene_id": scene_id,
             "description": description,
             "license_type": "proprietary_cleared",

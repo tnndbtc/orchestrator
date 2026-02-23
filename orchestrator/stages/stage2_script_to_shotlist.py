@@ -62,7 +62,7 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
 
             first_dialogue = next((a for a in actions if a.get("type") == "dialogue"), None)
             speaker_id = (
-                first_dialogue["character"].lower().replace(" ", "_")
+                first_dialogue["character"].lower().replace(" ", "-").replace("_", "-")
                 if first_dialogue else None
             )
             audio_intent = {

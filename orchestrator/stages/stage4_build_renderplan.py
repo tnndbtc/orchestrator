@@ -1,11 +1,87 @@
 """Stage 4: Merge AssetManifest_draft + AssetManifest.media → AssetManifest_final, build RenderPlan."""
 
 import json
+import logging
 import os
+from pathlib import Path
 
 from ..registry import ArtifactRegistry
 from ..utils.agent_bin import call_agent
 from ..validator import validate_artifact
+
+logger = logging.getLogger(__name__)
+
+# Visual asset types that need real image files for the renderer.
+_VISUAL_ASSET_TYPES = frozenset({"character", "background", "prop"})
+
+# Distinct background colors per visual asset type (dark, low-saturation palette).
+_ASSET_TYPE_COLOR: dict[str, str] = {
+    "background": "#1a1a2e",  # dark navy
+    "character":  "#1a2e1a",  # dark forest
+    "prop":       "#2e1a1a",  # dark maroon
+}
+
+
+def _generate_visual_placeholder(asset_id: str, asset_type: str, run_dir: Path) -> str | None:
+    """Generate a solid-colour 1280×720 PNG for a visual placeholder asset.
+
+    Tries ``tools.renderer.placeholder.generate_placeholder`` (video-agent) first,
+    then falls back to raw Pillow, then gives up (returns None).
+
+    Returns:
+        A ``file://`` URI string pointing to the written PNG, or None if neither
+        Pillow nor the video-agent renderer is available.
+    """
+    assets_dir = run_dir / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    out_path = assets_dir / f"{asset_id}.png"
+
+    # Already materialised on a previous run — reuse it.
+    if out_path.exists() and out_path.stat().st_size > 100:
+        return f"file://{out_path.resolve()}"
+
+    color = _ASSET_TYPE_COLOR.get(asset_type, "#1a1a2e")
+
+    # --- Prefer video-agent's generator (already installed in the shared venv) ---
+    try:
+        from tools.renderer.placeholder import generate_placeholder  # type: ignore[import]
+        generate_placeholder(
+            shot_id=asset_id,
+            width=1280,
+            height=720,
+            color=color,
+            output_path=out_path,
+        )
+        logger.debug("Generated placeholder via tools.renderer.placeholder: %s", out_path)
+        return f"file://{out_path.resolve()}"
+    except ImportError:
+        pass
+    except Exception as exc:
+        logger.warning("tools.renderer.placeholder failed for %s: %s — trying raw Pillow", asset_id, exc)
+
+    # --- Fallback: raw Pillow ---
+    try:
+        from PIL import Image  # type: ignore[import]
+        hex_color = color.lstrip("#")
+        bg_rgb: tuple[int, int, int] = (
+            int(hex_color[0:2], 16),
+            int(hex_color[2:4], 16),
+            int(hex_color[4:6], 16),
+        )
+        img = Image.new("RGB", (1280, 720), color=bg_rgb)
+        img.save(str(out_path), format="PNG", compress_level=9, optimize=False)
+        logger.debug("Generated placeholder via raw Pillow: %s", out_path)
+        return f"file://{out_path.resolve()}"
+    except ImportError:
+        logger.warning(
+            "Pillow not available — cannot materialise placeholder for %s. "
+            "Install: pip install Pillow>=10",
+            asset_id,
+        )
+        return None
+    except Exception as exc:
+        logger.warning("Pillow failed for %s: %s", asset_id, exc)
+        return None
 
 
 def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
@@ -16,6 +92,7 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
             ShotList.json             (for timing_lock_hash)
     Writes: AssetManifest_final.json  (merge of draft envelope + media items, side output)
             RenderPlan.json           (primary output)
+            assets/<asset_id>.png     (solid-colour PNGs for every visual placeholder)
 
     Returns the RenderPlan artifact dict.
     """
@@ -92,16 +169,28 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
         },
     )
 
-    # 7. Build RenderPlan.resolved_assets by mapping each item in AssetManifest_final
+    # 7. Build RenderPlan.resolved_assets.
+    #    For visual placeholders (character / background / prop), generate a real
+    #    solid-colour PNG so the renderer's _collect_placeholders() guard does not
+    #    block.  Non-visual assets (vo, sfx, music) keep their placeholder URIs.
     resolved_assets: list[dict] = []
     for item in asset_manifest_final.get("items", []):
+        uri = item["uri"]
+        is_placeholder = item["is_placeholder"]
+
+        if is_placeholder and item["asset_type"] in _VISUAL_ASSET_TYPES:
+            file_uri = _generate_visual_placeholder(item["asset_id"], item["asset_type"], run_dir)
+            if file_uri:
+                uri = file_uri
+                is_placeholder = False
+
         resolved_assets.append(
             {
                 "asset_id": item["asset_id"],
                 "asset_type": item["asset_type"],
-                "uri": item["uri"],
+                "uri": uri,
                 "license_type": item["metadata"]["license_type"],
-                "is_placeholder": item["is_placeholder"],
+                "is_placeholder": is_placeholder,
             }
         )
 

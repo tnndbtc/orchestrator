@@ -126,9 +126,25 @@ def run_command(
     click.echo()
     if summary["status"] == "completed":
         click.echo(f"✅  Pipeline completed   run_id={runner.run_id}")
-        click.echo(
-            f"    Artifacts: {Path(artifacts_dir).resolve() / project_config['id'] / runner.run_id}"
-        )
+        run_dir = Path(artifacts_dir).resolve() / project_config["id"] / runner.run_id
+        click.echo(f"    Artifacts: {run_dir}")
+
+        # Print the video output path so the user knows where to find it.
+        render_output_path = run_dir / "RenderOutput.json"
+        if render_output_path.exists():
+            try:
+                ro = json.loads(render_output_path.read_text(encoding="utf-8"))
+                video_uri = ro.get("video_uri", "")
+                if video_uri.startswith("file://"):
+                    video_path = Path(video_uri[len("file://"):])
+                    if video_path.exists():
+                        click.echo(f"    Video:     {video_path}")
+                    else:
+                        click.echo(f"    Video URI: {video_uri}  (file not found)")
+                elif video_uri and not video_uri.startswith("placeholder://"):
+                    click.echo(f"    Video URI: {video_uri}")
+            except (OSError, json.JSONDecodeError, KeyError):
+                pass
     else:
         click.echo(f"❌  Pipeline FAILED      run_id={runner.run_id}", err=False)
         for err in summary["errors"]:
@@ -820,11 +836,16 @@ def investigate_determinism_command(project: str, out_dir: str) -> None:
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    artifacts_dir = out_path / "runs"
     project_id = project_config["id"]
     token = uuid.uuid4().hex[:8]
-    run_id_a = f"invdet-a-{token}"
-    run_id_b = f"invdet-b-{token}"
+
+    # Both runs share the same run_id so that all JSON fields seeded from it
+    # (generation_seed, script_id, shotlist_id, manifest_id, plan_id …) are
+    # byte-identical.  The two runs are separated by using different artifacts_dir
+    # roots, so their output *folder* paths differ while their JSON *content* does not.
+    run_id = f"invdet-{token}"
+    artifacts_dir_a = out_path / "run-a"
+    artifacts_dir_b = out_path / "run-b"
 
     _canon = {
         "schema_id": "CanonDecision", "schema_version": "1.0.0",
@@ -839,7 +860,7 @@ def investigate_determinism_command(project: str, out_dir: str) -> None:
         "items": [],
     }
 
-    for run_id in (run_id_a, run_id_b):
+    for artifacts_dir in (artifacts_dir_a, artifacts_dir_b):
         run_dir = artifacts_dir / project_id / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "CanonDecision.json").write_text(
@@ -859,13 +880,29 @@ def investigate_determinism_command(project: str, out_dir: str) -> None:
         )
         summary = runner.run()
         if summary["status"] != "completed":
-            click.echo(f"ERROR: pipeline run {run_id} failed")
+            click.echo(f"ERROR: pipeline run failed (artifacts_dir={artifacts_dir})")
             for err in summary.get("errors", []):
                 click.echo(f"  {err}")
             sys.exit(1)
 
-    dir_a = artifacts_dir / project_id / run_id_a
-    dir_b = artifacts_dir / project_id / run_id_b
+    dir_a = artifacts_dir_a / project_id / run_id
+    dir_b = artifacts_dir_b / project_id / run_id
+
+    # Harness assertion: Script.json must be byte-identical across both runs.
+    # A mismatch here means the upstream generator (writing-agent) is itself
+    # non-deterministic — a separate problem that masks all downstream diffs.
+    script_a = dir_a / "Script.json"
+    script_b = dir_b / "Script.json"
+    if script_a.exists() and script_b.exists():
+        if script_a.read_bytes() != script_b.read_bytes():
+            click.echo(
+                "ERROR: inputs mutated — Script.json differs between the two runs.\n"
+                "The writing-agent (or stub) is non-deterministic; fix that before\n"
+                "investigating downstream determinism.",
+                err=True,
+            )
+            sys.exit(1)
+
     diffs = _compare_contract_artifacts(dir_a, dir_b)
 
     status = "pass" if not diffs else "fail"
