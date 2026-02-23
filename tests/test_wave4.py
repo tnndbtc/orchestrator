@@ -231,13 +231,23 @@ class TestIntegrationSmoke:
         project_file = tmp_path / "project.json"
         project_file.write_text(json.dumps(_SMOKE_PROJECT), encoding="utf-8")
 
-        # 2. Compute run_id and write CanonDecision.json
+        # 2. Compute run_id and write CanonDecision.json + AssetManifest.media.json
         run_id = compute_run_id(_SMOKE_PROJECT)
         artifacts_dir = tmp_path / "artifacts"
         run_dir = artifacts_dir / _SMOKE_PROJECT["id"] / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "CanonDecision.json").write_text(
             json.dumps(_CANON_ALLOW), encoding="utf-8"
+        )
+        # Stage 4 requires AssetManifest.media.json as an external input
+        (run_dir / "AssetManifest.media.json").write_text(
+            json.dumps({
+                "schema_id": "AssetManifest.media",
+                "schema_version": "1.0.0",
+                "manifest_id": "manifest-stub",
+                "producer": "test-stub",
+                "items": [],
+            }), encoding="utf-8"
         )
 
         # 3. Run the pipeline with stage5 stubbed

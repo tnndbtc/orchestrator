@@ -66,12 +66,12 @@ def _stage2_stub(project_config, run_id, registry):
 def _stage3_stub(project_config, run_id, registry):
     pid = project_config["id"]
     data = {
-        "schema_id": "AssetManifest",
+        "schema_id": "AssetManifest_draft",
         "schema_version": "1.0.0",
         "manifest_id": "am-001",
         "shotlist_ref": "sl-001",
     }
-    _write_artifact_json(registry, pid, run_id, "AssetManifest", data)
+    _write_artifact_json(registry, pid, run_id, "AssetManifest_draft", data)
     return data
 
 
@@ -161,12 +161,12 @@ class TestDeterminismNormalization:
             shotlist_id = f"shotlist-{pid}-{run_id[:8]}"
             manifest_id = f"manifest-{pid}-{run_id[:8]}"
             data = {
-                "schema_id": "AssetManifest",
+                "schema_id": "AssetManifest_draft",
                 "schema_version": "1.0.0",
                 "manifest_id": manifest_id,
                 "shotlist_ref": shotlist_id,
             }
-            _write_artifact_json(registry, pid, run_id, "AssetManifest", data)
+            _write_artifact_json(registry, pid, run_id, "AssetManifest_draft", data)
             return data
 
         def stage4_runid(project_config, run_id, registry):

@@ -23,8 +23,9 @@ CONTRACTS_DIR = Path(__file__).parent.parent
 SCHEMA_MAP: dict[str, str] = {
     "Script": "Script.v1.json",
     "ShotList": "ShotList.v1.json",
-    "AssetManifest": "AssetManifest.v1.json",
+    "AssetManifest_draft": "AssetManifest.v1.json",
     "AssetManifest.media": "AssetManifest.media.v1.json",
+    "AssetManifest_final": "AssetManifest_final.v1.json",
     "RenderPlan": "RenderPlan.v1.json",
     "RenderOutput": "RenderOutput.v1.json",
     "RenderPackage": "RenderPackage.v1.json",

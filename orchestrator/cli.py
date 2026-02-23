@@ -327,7 +327,7 @@ def _diff_run_dirs(dir_a: Path, dir_b: Path) -> list[str]:
 _CONTRACT_ARTIFACTS = [
     "CanonDecision.json",
     "ShotList.json",
-    "AssetManifest.json",
+    "AssetManifest_draft.json",
     "RenderPlan.json",
     "RenderOutput.json",
 ]
@@ -346,7 +346,7 @@ def _normalize_artifact(artifact_name: str, data: dict) -> dict:
         for f in ("script_id", "shotlist_id"):
             d.pop(f, None)
 
-    elif artifact_name == "AssetManifest.json":
+    elif artifact_name == "AssetManifest_draft.json":
         for f in ("manifest_id", "shotlist_ref"):
             d.pop(f, None)
 
@@ -375,7 +375,7 @@ def _normalize_artifact(artifact_name: str, data: dict) -> dict:
 
 
 def _compute_normalized_render_hashes(run_dir: Path) -> dict:
-    """Compute sha256 hashes of the *normalized* AssetManifest and RenderPlan.
+    """Compute sha256 hashes of the *normalized* AssetManifest_draft and RenderPlan.
 
     These replace the raw derived hash fields in RenderOutput so that
     differences caused only by run-identity strings (manifest_id, plan_id …)
@@ -385,7 +385,7 @@ def _compute_normalized_render_hashes(run_dir: Path) -> dict:
     """
     try:
         manifest_raw = json.loads(
-            (run_dir / "AssetManifest.json").read_text(encoding="utf-8")
+            (run_dir / "AssetManifest_draft.json").read_text(encoding="utf-8")
         )
         plan_raw = json.loads(
             (run_dir / "RenderPlan.json").read_text(encoding="utf-8")
@@ -393,7 +393,7 @@ def _compute_normalized_render_hashes(run_dir: Path) -> dict:
     except (json.JSONDecodeError, OSError):
         return {}
 
-    norm_manifest = _normalize_artifact("AssetManifest.json", manifest_raw)
+    norm_manifest = _normalize_artifact("AssetManifest_draft.json", manifest_raw)
     norm_plan = _normalize_artifact("RenderPlan.json", plan_raw)
 
     # Canonical bytes: same algorithm used by the real renderer
@@ -487,7 +487,7 @@ def _compare_contract_artifacts(dir_a: Path, dir_b: Path) -> list[dict]:
         norm_hashes_a.get(k) != norm_hashes_b.get(k) for k in _hash_keys
     ):
         for art_name, label in (
-            ("AssetManifest.json", "[AssetManifest]"),
+            ("AssetManifest_draft.json", "[AssetManifest_draft]"),
             ("RenderPlan.json", "[RenderPlan]"),
         ):
             try:
@@ -663,6 +663,17 @@ def verify_system_command() -> None:
         (run_dir / "CanonDecision.json").write_text(
             json.dumps(canon, indent=2), encoding="utf-8"
         )
+        # Pre-write AssetManifest.media.json stub (media agent external input)
+        media_stub = {
+            "schema_id": "AssetManifest.media",
+            "schema_version": "1.0.0",
+            "manifest_id": "verify-system-media-stub",
+            "producer": "verify-system-stub",
+            "items": [],
+        }
+        (run_dir / "AssetManifest.media.json").write_text(
+            json.dumps(media_stub, indent=2), encoding="utf-8"
+        )
 
         # Step 4: full pipeline
         proc = subprocess.run(
@@ -806,11 +817,22 @@ def investigate_determinism_command(project: str, out_dir: str) -> None:
         "decision": "allow", "decision_id": "investigate-determinism",
     }
 
+    _media_stub = {
+        "schema_id": "AssetManifest.media",
+        "schema_version": "1.0.0",
+        "manifest_id": "investigate-determinism-media-stub",
+        "producer": "investigate-determinism-stub",
+        "items": [],
+    }
+
     for run_id in (run_id_a, run_id_b):
         run_dir = artifacts_dir / project_id / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "CanonDecision.json").write_text(
             json.dumps(_canon, indent=2), encoding="utf-8"
+        )
+        (run_dir / "AssetManifest.media.json").write_text(
+            json.dumps(_media_stub, indent=2), encoding="utf-8"
         )
         registry = ArtifactRegistry(artifacts_dir)
         runner = PipelineRunner(

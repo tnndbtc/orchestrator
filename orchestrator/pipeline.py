@@ -15,7 +15,7 @@ from .utils.hashing import hash_artifact, hash_file_bytes
 STAGES: list[tuple[int, str, str]] = [
     (1, "stage1_generate_script",           "Script"),
     (2, "stage2_script_to_shotlist",        "ShotList"),
-    (3, "stage3_shotlist_to_assetmanifest", "AssetManifest"),
+    (3, "stage3_shotlist_to_assetmanifest", "AssetManifest_draft"),
     (4, "stage4_build_renderplan",          "RenderPlan"),
     (5, "stage5_render_preview",            "RenderOutput"),
 ]
@@ -25,8 +25,8 @@ STAGE_INPUTS: dict[str, list[str]] = {
     "stage1_generate_script":           [],
     "stage2_script_to_shotlist":        ["Script"],
     "stage3_shotlist_to_assetmanifest": ["ShotList"],
-    "stage4_build_renderplan":          ["AssetManifest", "ShotList"],
-    "stage5_render_preview":            ["RenderPlan", "AssetManifest"],
+    "stage4_build_renderplan":          ["AssetManifest_draft", "AssetManifest.media", "ShotList"],
+    "stage5_render_preview":            ["RenderPlan", "AssetManifest_final"],
 }
 
 

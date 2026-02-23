@@ -97,6 +97,15 @@ PROJECT_CONFIG: dict = {
 # Helper: run the full pipeline and return (summary, run_dir)
 # ---------------------------------------------------------------------------
 
+_MEDIA_MANIFEST_STUB = {
+    "schema_id": "AssetManifest.media",
+    "schema_version": "1.0.0",
+    "manifest_id": "manifest-stub",
+    "producer": "test-stub",
+    "items": [],
+}
+
+
 def _run_full_pipeline(
     tmp_path: Path,
     project_config: dict = PROJECT_CONFIG,
@@ -108,13 +117,21 @@ def _run_full_pipeline(
     run_id = compute_run_id(project_config)
     run_dir = tmp_path / project_config["id"] / run_id
 
+    # Always ensure the run directory exists before writing pre-requisite files.
+    run_dir.mkdir(parents=True, exist_ok=True)
+
     # Write a default CanonDecision.json so existing tests keep working.
     # Don't overwrite if the test pre-wrote its own CanonDecision.json.
     if canon_decision is not None:
-        run_dir.mkdir(parents=True, exist_ok=True)
         canon_file = run_dir / "CanonDecision.json"
         if not canon_file.exists():
             canon_file.write_text(json.dumps(canon_decision), encoding="utf-8")
+
+    # Stage 4 requires AssetManifest.media.json as an external input.
+    # Write a minimal stub if the test has not pre-written its own.
+    media_file = run_dir / "AssetManifest.media.json"
+    if not media_file.exists():
+        media_file.write_text(json.dumps(_MEDIA_MANIFEST_STUB), encoding="utf-8")
 
     runner = PipelineRunner(
         project_config=project_config,

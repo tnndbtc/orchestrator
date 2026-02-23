@@ -12,7 +12,8 @@ from .validator import validate_artifact
 _ARTIFACT_ID_FIELD: dict[str, str] = {
     "Script": "script_id",
     "ShotList": "shotlist_id",
-    "AssetManifest": "manifest_id",
+    "AssetManifest_draft": "manifest_id",
+    "AssetManifest_final": "manifest_id",
     "RenderPlan": "plan_id",
     "RenderOutput": "output_id",
     "RenderPackage": "request_id",

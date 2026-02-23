@@ -181,6 +181,15 @@ _CANON_ALLOW = {
     "decision_id": "test-allow-01",
 }
 
+# Minimal valid AssetManifest.media stub — stage 4 requires this external input.
+_MEDIA_MANIFEST_STUB = {
+    "schema_id": "AssetManifest.media",
+    "schema_version": "1.0.0",
+    "manifest_id": "manifest-stub",
+    "producer": "test-stub",
+    "items": [],
+}
+
 
 class TestPipelineSkipsExistingStage:
     def test_pipeline_skips_existing_stage(self, tmp_path, mock_stage5):
@@ -193,6 +202,10 @@ class TestPipelineSkipsExistingStage:
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "CanonDecision.json").write_text(
             json.dumps(_CANON_ALLOW), encoding="utf-8"
+        )
+        # Stage 4 requires AssetManifest.media.json as an external input
+        (run_dir / "AssetManifest.media.json").write_text(
+            json.dumps(_MEDIA_MANIFEST_STUB), encoding="utf-8"
         )
 
         # First run — all stages execute
@@ -231,6 +244,10 @@ class TestPipelineForceReruns:
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "CanonDecision.json").write_text(
             json.dumps(_CANON_ALLOW), encoding="utf-8"
+        )
+        # Stage 4 requires AssetManifest.media.json as an external input
+        (run_dir / "AssetManifest.media.json").write_text(
+            json.dumps(_MEDIA_MANIFEST_STUB), encoding="utf-8"
         )
 
         runner1 = PipelineRunner(
@@ -276,6 +293,10 @@ class TestFromStageReruns:
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "CanonDecision.json").write_text(
             json.dumps(_CANON_ALLOW), encoding="utf-8"
+        )
+        # Stage 4 requires AssetManifest.media.json as an external input
+        (run_dir / "AssetManifest.media.json").write_text(
+            json.dumps(_MEDIA_MANIFEST_STUB), encoding="utf-8"
         )
 
         # Full first run to populate all artifacts

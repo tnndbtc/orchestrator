@@ -1,13 +1,13 @@
-"""Stage 3: Derive AssetManifest from ShotList."""
+"""Stage 3: Derive AssetManifest_draft from ShotList."""
 
 from ..registry import ArtifactRegistry
 
 
 def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
-    """Build AssetManifest from ShotList alone.
+    """Build AssetManifest_draft from ShotList alone.
 
     Reads:  ShotList.json
-    Writes: AssetManifest.json
+    Writes: AssetManifest_draft.json
 
     All asset requirements are derived from the ShotList shots:
     - characters[].character_id  → character_packs (unique, sorted)
@@ -79,7 +79,7 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
     ]
 
     manifest: dict = {
-        "schema_id": "AssetManifest",
+        "schema_id": "AssetManifest_draft",
         "schema_version": "1.0.0",
         "manifest_id": f"manifest-{project_id}-{run_id[:8]}",
         "project_id": project_id,
@@ -92,7 +92,7 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
     registry.write_artifact(
         project_id,
         run_id,
-        "AssetManifest",
+        "AssetManifest_draft",
         manifest,
         parent_refs=[shotlist["shotlist_id"]],
         creation_params={

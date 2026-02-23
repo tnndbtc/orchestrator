@@ -59,7 +59,7 @@ def make_valid_shotlist() -> dict:
 
 def make_valid_asset_manifest() -> dict:
     return {
-        "schema_id": "AssetManifest",
+        "schema_id": "AssetManifest_draft",
         "schema_version": "1.0.0",
         "manifest_id": "test-manifest-001",
         "project_id": "test-project",
@@ -72,6 +72,35 @@ def make_valid_asset_manifest() -> dict:
                 "speaker_id": "character-a",
                 "text": "Hello world",
                 "license_type": "generated_local",
+            }
+        ],
+    }
+
+
+def make_valid_asset_manifest_media() -> dict:
+    return {
+        "schema_id": "AssetManifest.media",
+        "schema_version": "1.0.0",
+        "manifest_id": "test-manifest-001",
+        "producer": "test/stub",
+        "items": [
+            {
+                "asset_id": "char-hero",
+                "asset_type": "character",
+                "uri": "placeholder://character/hero",
+                "is_placeholder": True,
+                "metadata": {
+                    "license_type": "proprietary_cleared",
+                    "retrieval_date": "1970-01-01T00:00:00Z",
+                },
+                "source": {"type": "generated_placeholder"},
+                "license": {
+                    "spdx_id": "LicenseRef-proprietary",
+                    "attribution_required": False,
+                },
+                "schema_id": "urn:media:resolved-asset",
+                "schema_version": "1.0.0",
+                "producer": "test/stub",
             }
         ],
     }
@@ -178,63 +207,109 @@ class TestShotList:
 
 
 # ---------------------------------------------------------------------------
-# AssetManifest
+# AssetManifest_draft
 # ---------------------------------------------------------------------------
 
 
 class TestAssetManifest:
     def test_valid_asset_manifest(self):
-        validate_artifact(make_valid_asset_manifest(), "AssetManifest")
+        validate_artifact(make_valid_asset_manifest(), "AssetManifest_draft")
 
     def test_invalid_asset_manifest_missing_shotlist_ref(self):
         data = make_valid_asset_manifest()
         del data["shotlist_ref"]
         with pytest.raises(jsonschema.ValidationError):
-            validate_artifact(data, "AssetManifest")
+            validate_artifact(data, "AssetManifest_draft")
 
     def test_invalid_asset_manifest_missing_required(self):
         data = make_valid_asset_manifest()
         del data["manifest_id"]
         with pytest.raises(jsonschema.ValidationError):
-            validate_artifact(data, "AssetManifest")
+            validate_artifact(data, "AssetManifest_draft")
 
     def test_character_pack_with_asset_id_and_license_type_is_valid(self):
         data = make_valid_asset_manifest()
         data["character_packs"] = [
             {"asset_id": "char-hero", "license_type": "proprietary_cleared"}
         ]
-        validate_artifact(data, "AssetManifest")
+        validate_artifact(data, "AssetManifest_draft")
 
     def test_character_pack_missing_asset_id_is_invalid(self):
         data = make_valid_asset_manifest()
         data["character_packs"] = [{"license_type": "proprietary_cleared"}]
         with pytest.raises(jsonschema.ValidationError):
-            validate_artifact(data, "AssetManifest")
+            validate_artifact(data, "AssetManifest_draft")
 
     def test_character_pack_missing_license_type_is_invalid(self):
         data = make_valid_asset_manifest()
         data["character_packs"] = [{"asset_id": "char-hero"}]
         with pytest.raises(jsonschema.ValidationError):
-            validate_artifact(data, "AssetManifest")
+            validate_artifact(data, "AssetManifest_draft")
 
     def test_background_with_asset_id_and_license_type_is_valid(self):
         data = make_valid_asset_manifest()
         data["backgrounds"] = [
             {"asset_id": "bg-scene-001", "license_type": "proprietary_cleared"}
         ]
-        validate_artifact(data, "AssetManifest")
+        validate_artifact(data, "AssetManifest_draft")
 
     def test_background_missing_asset_id_is_invalid(self):
         data = make_valid_asset_manifest()
         data["backgrounds"] = [{"license_type": "proprietary_cleared"}]
         with pytest.raises(jsonschema.ValidationError):
-            validate_artifact(data, "AssetManifest")
+            validate_artifact(data, "AssetManifest_draft")
 
     def test_background_missing_license_type_is_invalid(self):
         data = make_valid_asset_manifest()
         data["backgrounds"] = [{"asset_id": "bg-scene-001"}]
         with pytest.raises(jsonschema.ValidationError):
-            validate_artifact(data, "AssetManifest")
+            validate_artifact(data, "AssetManifest_draft")
+
+
+# ---------------------------------------------------------------------------
+# AssetManifest.media
+# ---------------------------------------------------------------------------
+
+
+class TestAssetManifestMedia:
+    def test_valid_asset_manifest_media(self):
+        """A fully valid AssetManifest.media document passes schema validation."""
+        validate_artifact(make_valid_asset_manifest_media(), "AssetManifest.media")
+
+    def test_http_uri_rejected(self):
+        """HTTP/HTTPS URIs are explicitly disallowed by the schema pattern."""
+        data = make_valid_asset_manifest_media()
+        data["items"][0]["uri"] = "https://example.com/asset.png"
+        with pytest.raises(jsonschema.ValidationError):
+            validate_artifact(data, "AssetManifest.media")
+
+    def test_bad_asset_type_enum(self):
+        """asset_type must be one of the enum values."""
+        data = make_valid_asset_manifest_media()
+        data["items"][0]["asset_type"] = "unknown_type"
+        with pytest.raises(jsonschema.ValidationError):
+            validate_artifact(data, "AssetManifest.media")
+
+    def test_missing_retrieval_date(self):
+        """metadata.retrieval_date is required."""
+        data = make_valid_asset_manifest_media()
+        del data["items"][0]["metadata"]["retrieval_date"]
+        with pytest.raises(jsonschema.ValidationError):
+            validate_artifact(data, "AssetManifest.media")
+
+    def test_missing_producer_on_item(self):
+        """Each item must have a producer field."""
+        data = make_valid_asset_manifest_media()
+        del data["items"][0]["producer"]
+        with pytest.raises(jsonschema.ValidationError):
+            validate_artifact(data, "AssetManifest.media")
+
+    def test_missing_license_on_item(self):
+        """Each item must have a license field."""
+        data = make_valid_asset_manifest_media()
+        del data["items"][0]["license"]
+        with pytest.raises(jsonschema.ValidationError):
+            validate_artifact(data, "AssetManifest.media")
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +375,7 @@ class TestRenderOutput:
 _PIPELINE_ARTIFACT_TYPES = [
     "Script",
     "ShotList",
-    "AssetManifest",
+    "AssetManifest_draft",
     "RenderPlan",
     "RenderOutput",
 ]

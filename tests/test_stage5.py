@@ -42,12 +42,22 @@ def _minimal_ro(
 
 
 def _write_minimal_artifacts(registry: ArtifactRegistry, pid: str, run_id: str) -> None:
-    """Write placeholder AssetManifest and RenderPlan so registry paths exist."""
+    """Write AssetManifest_final and RenderPlan so registry paths exist.
+
+    RenderPlan must contain at least one non-placeholder resolved_asset so that
+    stage5 proceeds to call the renderer (rather than taking the placeholder shortcut).
+    """
     run_dir = registry.run_dir(pid, run_id)
     run_dir.mkdir(parents=True, exist_ok=True)
-    # These just need to be present on disk; stage5 passes their paths to the (mocked) renderer
-    registry.artifact_path(pid, run_id, "AssetManifest").write_text("{}", encoding="utf-8")
-    registry.artifact_path(pid, run_id, "RenderPlan").write_text("{}", encoding="utf-8")
+    rp = {"resolved_assets": [{"asset_id": "test-asset", "asset_type": "vo",
+                                "uri": "file:///tmp/test.mp4", "is_placeholder": False,
+                                "license_type": "cc0"}]}
+    registry.artifact_path(pid, run_id, "RenderPlan").write_text(
+        json.dumps(rp), encoding="utf-8"
+    )
+    registry.artifact_path(pid, run_id, "AssetManifest_final").write_text(
+        "{}", encoding="utf-8"
+    )
 
 
 # ---------------------------------------------------------------------------

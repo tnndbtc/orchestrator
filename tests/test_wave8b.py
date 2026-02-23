@@ -83,15 +83,15 @@ def _write_run_dir(
         encoding="utf-8",
     )
 
-    # AssetManifest — run-identity in manifest_id / shotlist_ref
+    # AssetManifest_draft — run-identity in manifest_id / shotlist_ref
     manifest = {
-        "schema_id": "AssetManifest",
+        "schema_id": "AssetManifest_draft",
         "schema_version": "1.0.0",
         "manifest_id": f"manifest-proj-{suffix}",
         "shotlist_ref": f"shotlist-proj-{suffix}",
         "character_packs": _CHAR_PACKS,
     }
-    (run_dir / "AssetManifest.json").write_text(
+    (run_dir / "AssetManifest_draft.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"
     )
 
@@ -158,11 +158,11 @@ def _stage2_stub(project_config, run_id, registry):
 
 def _stage3_stub(project_config, run_id, registry):
     pid = project_config["id"]
-    manifest = {"schema_id": "AssetManifest", "schema_version": "1.0.0",
+    manifest = {"schema_id": "AssetManifest_draft", "schema_version": "1.0.0",
                 "manifest_id": f"manifest-{pid}-{run_id[:8]}",
                 "shotlist_ref": f"shotlist-{pid}-{run_id[:8]}",
                 "character_packs": _CHAR_PACKS}
-    _write_artifact_json(registry, pid, run_id, "AssetManifest", manifest)
+    _write_artifact_json(registry, pid, run_id, "AssetManifest_draft", manifest)
     return manifest
 
 
@@ -181,7 +181,7 @@ def _stage5_stub(project_config, run_id, registry):
     run_dir = registry.run_dir(pid, run_id)
     # Load what stage3/4 wrote so we can compute raw hashes as the real renderer would
     try:
-        manifest = json.loads((run_dir / "AssetManifest.json").read_text(encoding="utf-8"))
+        manifest = json.loads((run_dir / "AssetManifest_draft.json").read_text(encoding="utf-8"))
         plan = json.loads((run_dir / "RenderPlan.json").read_text(encoding="utf-8"))
         raw = _raw_render_hashes(manifest, plan)
     except (OSError, json.JSONDecodeError):

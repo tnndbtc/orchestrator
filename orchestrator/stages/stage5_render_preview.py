@@ -13,7 +13,47 @@ def _uri_to_path(uri: str) -> Path | None:
 def run(project_config, run_id, registry):
     pid = project_config["id"]
 
-    # 1) Resolve renderer from env var
+    # 1) Check for all-placeholder RenderPlan — skip renderer entirely
+    plan_path     = registry.artifact_path(pid, run_id, "RenderPlan")
+    manifest_path = registry.artifact_path(pid, run_id, "AssetManifest_final")
+    try:
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        resolved = plan.get("resolved_assets", [])
+        all_placeholder = bool(resolved) and all(a.get("is_placeholder", False) for a in resolved)
+    except (OSError, json.JSONDecodeError):
+        resolved = None  # RenderPlan missing — fall through to env var check
+        all_placeholder = False
+
+    if resolved is not None and (not resolved or all_placeholder):
+        # Read timing_lock_hash from ShotList so provenance is consistent
+        try:
+            shotlist = registry.read_artifact(pid, run_id, "ShotList")
+            timing_lock_hash = shotlist.get("timing_lock_hash", "")
+        except (OSError, json.JSONDecodeError, KeyError):
+            timing_lock_hash = ""
+
+        ro = {
+            "schema_id": "RenderOutput",
+            "schema_version": "1.0.0",
+            "output_id": f"placeholder-{run_id}",
+            "video_uri": "placeholder://video/preview.mp4",
+            "captions_uri": "placeholder://captions/preview.srt",
+            "hashes": {"video_sha256": None, "captions_sha256": None},
+            "provenance": {"timing_lock_hash": timing_lock_hash},
+            "placeholder_render": True,
+            "placeholder_reason": (
+                "All resolved assets are placeholders; renderer skipped. "
+                "Provide real file:// URIs in AssetManifest.media.json to enable rendering."
+            ),
+        }
+        registry.write_artifact(
+            pid, run_id, "RenderOutput", ro,
+            parent_refs=[],
+            creation_params={"project_id": pid, "run_id": run_id, "stage": "stage5_render_preview"},
+        )
+        return ro
+
+    # 2) Resolve renderer from env var
     video_repo = os.environ.get("VIDEO_RENDERER_REPO")
     if not video_repo:
         raise EnvironmentError(
@@ -24,12 +64,10 @@ def run(project_config, run_id, registry):
     renderer        = Path(video_repo) / "scripts" / "render_from_orchestrator.py"
     renderer_python = os.environ.get("VIDEO_RENDERER_PYTHON", sys.executable)
 
-    manifest_path = registry.artifact_path(pid, run_id, "AssetManifest")
-    plan_path     = registry.artifact_path(pid, run_id, "RenderPlan")
-    out_dir       = Path(registry.run_dir(pid, run_id)) / "render_preview"
+    out_dir = Path(registry.run_dir(pid, run_id)) / "render_preview"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 2) Invoke renderer; capture stdout JSON
+    # 3) Invoke renderer; capture stdout JSON
     result = subprocess.run(
         [renderer_python, str(renderer),
          "--asset-manifest", str(manifest_path),

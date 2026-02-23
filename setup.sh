@@ -269,10 +269,10 @@ do_test_from_stage_workflows() {
         --run-id "$RUN_ID_A" \
         --from-stage 3
 
-    if [ -f "$RUN_DIR_A/AssetManifest.json" ]; then
-        printf '  ✓  AssetManifest.json produced\n'
+    if [ -f "$RUN_DIR_A/AssetManifest_draft.json" ]; then
+        printf '  ✓  AssetManifest_draft.json produced\n'
     else
-        printf '  ✗  AssetManifest.json NOT produced — stage 3 failed\n'
+        printf '  ✗  AssetManifest_draft.json NOT produced — stage 3 failed\n'
         WORKFLOW_ERRORS=$((WORKFLOW_ERRORS + 1))
     fi
     if [ -f "$RUN_DIR_A/RenderPlan.json" ]; then
@@ -287,8 +287,9 @@ do_test_from_stage_workflows() {
     RUN_ID_B="run-s4-goldens-test"
     RUN_DIR_B="$TMP_DIR/$PROJECT_ID/$RUN_ID_B"
     run_cmd mkdir -p "$RUN_DIR_B"
-    run_cmd cp "$GOLDENS/ShotList.json"     "$RUN_DIR_B/ShotList.json"
-    run_cmd cp "$GOLDENS/AssetManifest.json" "$RUN_DIR_B/AssetManifest.json"
+    run_cmd cp "$GOLDENS/ShotList.json"              "$RUN_DIR_B/ShotList.json"
+    run_cmd cp "$GOLDENS/AssetManifest_draft.json"   "$RUN_DIR_B/AssetManifest_draft.json"
+    run_cmd cp "$GOLDENS/AssetManifest.media.json"   "$RUN_DIR_B/AssetManifest.media.json"
 
     printf '  + orchestrator run --project %s \\\n' "$PROJECT"
     printf '        --artifacts-dir %s \\\n' "$TMP_DIR"
@@ -300,6 +301,12 @@ do_test_from_stage_workflows() {
         --run-id "$RUN_ID_B" \
         --from-stage 4
 
+    if [ -f "$RUN_DIR_B/AssetManifest_final.json" ]; then
+        printf '  ✓  AssetManifest_final.json produced\n'
+    else
+        printf '  ✗  AssetManifest_final.json NOT produced — stage 4 failed\n'
+        WORKFLOW_ERRORS=$((WORKFLOW_ERRORS + 1))
+    fi
     if [ -f "$RUN_DIR_B/RenderPlan.json" ]; then
         printf '  ✓  RenderPlan.json produced\n'
     else

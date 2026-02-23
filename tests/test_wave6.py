@@ -38,8 +38,8 @@ def _make_run_dir(tmp_path: Path) -> Path:
     _write_json(run_dir / "CanonDecision.json", {
         "schema_id": "CanonDecision", "schema_version": "1.0.0", "decision": "allow",
     })
-    _write_json(run_dir / "AssetManifest.json", {
-        "schema_id": "AssetManifest", "schema_version": "1.0.0",
+    _write_json(run_dir / "AssetManifest_draft.json", {
+        "schema_id": "AssetManifest_draft", "schema_version": "1.0.0",
         "manifest_id": "am-001", "shotlist_ref": "sl-001",
     })
     _write_json(run_dir / "AssetManifestResolved.json", {
@@ -150,7 +150,7 @@ class TestPackageCommand:
             "artifacts/Script.json",
             "artifacts/ShotList.json",
             "artifacts/CanonDecision.json",
-            "artifacts/AssetManifest.json",
+            "artifacts/AssetManifest_draft.json",
             "artifacts/AssetManifestResolved.json",
             "artifacts/RenderPlan.json",
             "artifacts/RenderOutput.json",
