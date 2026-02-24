@@ -40,10 +40,26 @@ ORCHESTRATOR="$(dirname "$(command -v "$PYTHON")")/orchestrator"
 
 do_install_and_verify() {
     printf '\n[1] Installing and verifying...\n'
-    printf '    Using: %s\n' "$PYTHON"
-    run_cmd "$PYTHON" -m pip install -e ".[dev]"
+
+    # If not already inside a virtual environment, create or reuse .venv.
+    # This avoids the "externally-managed-environment" error on Debian/Ubuntu.
+    VENV_DIR="$REPO_ROOT/.venv"
+    if [ -z "${VIRTUAL_ENV:-}" ]; then
+        if [ ! -x "$VENV_DIR/bin/python" ]; then
+            printf '    Creating virtual environment at .venv ...\n'
+            run_cmd "$PYTHON" -m venv "$VENV_DIR"
+        fi
+        INSTALL_PYTHON="$VENV_DIR/bin/python"
+        INSTALL_ORCHESTRATOR="$VENV_DIR/bin/orchestrator"
+    else
+        INSTALL_PYTHON="$PYTHON"
+        INSTALL_ORCHESTRATOR="$ORCHESTRATOR"
+    fi
+
+    printf '    Using: %s\n' "$INSTALL_PYTHON"
+    run_cmd "$INSTALL_PYTHON" -m pip install -e ".[dev]"
     printf '\n    Running example pipeline to verify install...\n'
-    run_cmd "$ORCHESTRATOR" run --project examples/phase0/project.json
+    run_cmd "$INSTALL_ORCHESTRATOR" run --project examples/phase0/project.json --stub
     printf '    Done.\n'
 }
 
