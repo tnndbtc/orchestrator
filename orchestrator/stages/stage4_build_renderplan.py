@@ -21,6 +21,28 @@ _ASSET_TYPE_COLOR: dict[str, str] = {
     "prop":       "#2e1a1a",  # dark maroon
 }
 
+# Mirrors render_from_orchestrator._MIN_REAL_ASSET_BYTES.  Files at or below this
+# size are considered stubs (empty placeholders) and replaced with Pillow-generated
+# solid-colour PNGs so the renderer's own stub guard never fires.
+_MIN_REAL_ASSET_BYTES = 100
+
+
+def _is_stub_uri(uri: str) -> bool:
+    """Return True when *uri* is a ``file://`` that points to a stub (≤ _MIN_REAL_ASSET_BYTES).
+
+    Mirrors ``render_from_orchestrator._is_stub_file``.  Media-agent's local
+    resolver can return minimal 1×1 test-fixture PNGs (≈ 69 bytes) that are
+    technically ``is_placeholder=False`` yet too small for the renderer to accept.
+    Stage 4 replaces them pre-emptively so the renderer never encounters a stub.
+    Does not raise — returns False on any OS error.
+    """
+    if not uri or not uri.startswith("file://"):
+        return False
+    try:
+        return Path(uri[len("file://"):]).stat().st_size <= _MIN_REAL_ASSET_BYTES
+    except OSError:
+        return False
+
 
 def _generate_visual_placeholder(asset_id: str, asset_type: str, run_dir: Path) -> str | None:
     """Generate a solid-colour 1280×720 PNG for a visual placeholder asset.
@@ -145,17 +167,41 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
     shotlist = registry.read_artifact(project_id, run_id, "ShotList")
     timing_lock_hash: str = shotlist["timing_lock_hash"]
 
-    # 5. Build AssetManifest_final: draft envelope + media items
+    # 5. Generate solid-colour PNGs for every visual placeholder / stub item.
+    #    Must happen BEFORE writing AssetManifest_final.json so the manifest
+    #    itself carries the proper file:// URIs.  Renderers that read URIs
+    #    directly from the manifest (not via RenderPlan.asset_resolutions) will
+    #    then see real files rather than placeholder:// or stub file:// paths.
+    #    Also replaces stub file:// URIs (≤ _MIN_REAL_ASSET_BYTES) that
+    #    media-agent may return from its test library (minimal 1×1 PNGs ≈ 69 bytes).
+    #    Non-visual assets (vo, sfx, music) keep their placeholder URIs.
+    final_items: list[dict] = []
+    for item in media.get("items", []):
+        uri          = item["uri"]
+        is_placeholder = item["is_placeholder"]
+
+        if (is_placeholder or _is_stub_uri(uri)) and item["asset_type"] in _VISUAL_ASSET_TYPES:
+            file_uri = _generate_visual_placeholder(item["asset_id"], item["asset_type"], run_dir)
+            if file_uri:
+                # Return a shallow copy with uri + is_placeholder updated so the
+                # original media-agent item dict is not mutated.
+                item = {**item, "uri": file_uri, "is_placeholder": False}
+                uri          = file_uri
+                is_placeholder = False
+
+        final_items.append(item)
+
+    # 6. Build AssetManifest_final: draft envelope + finalised items
     asset_manifest_final: dict = {
         "schema_id": "AssetManifest_final",
         "schema_version": "1.0.0",
         "manifest_id": draft["manifest_id"],
         "project_id": draft["project_id"],
         "shotlist_ref": draft["shotlist_ref"],
-        "items": media.get("items", []),
+        "items": final_items,
     }
 
-    # 6. Write AssetManifest_final.json via registry (validates + writes meta)
+    # 7. Write AssetManifest_final.json via registry (validates + writes meta)
     registry.write_artifact(
         project_id,
         run_id,
@@ -169,28 +215,18 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
         },
     )
 
-    # 7. Build RenderPlan.resolved_assets.
-    #    For visual placeholders (character / background / prop), generate a real
-    #    solid-colour PNG so the renderer's _collect_placeholders() guard does not
-    #    block.  Non-visual assets (vo, sfx, music) keep their placeholder URIs.
+    # 8. Build RenderPlan.resolved_assets from the already-finalised items.
+    #    URIs are already correct (stubs/placeholders replaced above), so
+    #    this loop is a straight projection — no extra PNG generation needed.
     resolved_assets: list[dict] = []
-    for item in asset_manifest_final.get("items", []):
-        uri = item["uri"]
-        is_placeholder = item["is_placeholder"]
-
-        if is_placeholder and item["asset_type"] in _VISUAL_ASSET_TYPES:
-            file_uri = _generate_visual_placeholder(item["asset_id"], item["asset_type"], run_dir)
-            if file_uri:
-                uri = file_uri
-                is_placeholder = False
-
+    for item in final_items:
         resolved_assets.append(
             {
-                "asset_id": item["asset_id"],
-                "asset_type": item["asset_type"],
-                "uri": uri,
+                "asset_id":     item["asset_id"],
+                "asset_type":   item["asset_type"],
+                "uri":          item["uri"],
                 "license_type": item["metadata"]["license_type"],
-                "is_placeholder": is_placeholder,
+                "is_placeholder": item["is_placeholder"],
             }
         )
 
@@ -208,7 +244,7 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
         "resolved_assets": resolved_assets,
     }
 
-    # 8. Write RenderPlan.json (primary output)
+    # 9. Write RenderPlan.json (primary output)
     registry.write_artifact(
         project_id,
         run_id,
