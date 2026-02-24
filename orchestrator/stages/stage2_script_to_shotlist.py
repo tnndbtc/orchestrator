@@ -21,7 +21,7 @@ def _call_world_engine(project_id: str, run_id: str, registry: ArtifactRegistry)
     try:
         result = call_agent(
             "world-engine",
-            ["produce-shotlist", "--script", str(script_path), "--output", str(tmp_path)],
+            ["produce-shotlist", "--script", str(script_path), "--out", str(tmp_path)],
             capture_output=True,
             text=True,
         )
