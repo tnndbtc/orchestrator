@@ -339,6 +339,35 @@ do_test_from_stage_workflows() {
     printf '\n  ✓  From-stage workflow tests passed\n'
 }
 
+do_test_e2e_determinism() {
+    # Locate the orchestrator binary: .venv (created by option 1) → directory
+    # next to $PYTHON → PATH.  Skip gracefully if none is found so that option 2
+    # can still be run without having run option 1 first.
+    DET_BIN=""
+    if [ -x "$REPO_ROOT/.venv/bin/orchestrator" ]; then
+        DET_BIN="$REPO_ROOT/.venv/bin/orchestrator"
+    elif [ -x "$(dirname "$(command -v "$PYTHON")")/orchestrator" ]; then
+        DET_BIN="$(dirname "$(command -v "$PYTHON")")/orchestrator"
+    elif command -v orchestrator > /dev/null 2>&1; then
+        DET_BIN="$(command -v orchestrator)"
+    fi
+
+    if [ -z "$DET_BIN" ]; then
+        printf '    SKIP  orchestrator binary not found — run option 1 first\n'
+        return 0
+    fi
+
+    DET_TMP="$(mktemp -d)"
+    printf '  + orchestrator investigate-determinism \\\n'
+    printf '        --project examples/phase0/project.json \\\n'
+    printf '        --out %s\n' "$DET_TMP"
+    "$DET_BIN" investigate-determinism \
+        --project examples/phase0/project.json \
+        --out "$DET_TMP"
+    rm -rf "$DET_TMP"
+    printf '  ✓  investigate-determinism: pass\n'
+}
+
 do_test() {
     printf '\n[2] Running tests...\n'
     run_cmd "$PYTHON" -m pytest tests/ -v
@@ -364,6 +393,8 @@ do_test() {
         orchestrator/stages/stage5_render_preview.py
     printf '\n    Running from-stage workflow tests...\n'
     do_test_from_stage_workflows
+    printf '\n    Running e2e determinism check...\n'
+    do_test_e2e_determinism
     printf '\n    All checks passed.\n'
 }
 
