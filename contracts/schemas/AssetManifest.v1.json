@@ -55,6 +55,11 @@
           "speaker_id": {"type": "string"},
           "text":       {"type": "string"},
           "license_type": {"type": "string"},
+          "visual": {
+            "type": "boolean",
+            "description": "Set to false for VO-only speakers with no visual representation (e.g. disembodied voices). Renderer holds on the current background instead of looking up a character_pack.",
+            "default": true
+          },
           "tts_prompt": {"$ref": "#/$defs/TtsPrompt"}
         }
       }
