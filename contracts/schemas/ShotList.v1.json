@@ -72,6 +72,13 @@
         "audio_intent": {
           "$ref": "#/$defs/AudioIntent"
         },
+        "background_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "References bg_id in AssetManifest_draft.backgrounds[]. The plan builder resolves this to background_asset_id in RenderPlan.shots[] via the two-step lookup: ShotList.background_id → AssetManifest_draft.backgrounds[bg_id].asset_id → RenderPlan.RenderedShot.background_asset_id. Multiple shots may share the same background_id when they occur in the same location."
+        },
         "camera_framing": {
           "type": "string"
         },
@@ -125,6 +132,20 @@
           "items": {
             "type": "string"
           }
+        },
+        "vo_item_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Ordered list of item_id values from AssetManifest_draft.vo_items[] assigned to this shot. All listed IDs are carried into RenderPlan.shots[].vo_lines[] with timeline offsets distributed evenly across the shot duration (Phase 0). Use an empty array when the shot has no VO. Replaces the deprecated vo_item_id field."
+        },
+        "vo_item_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "DEPRECATED — use vo_item_ids (array) instead. Single item_id from AssetManifest_draft.vo_items[]. Retained for backward compatibility with ShotLists produced before vo_item_ids was introduced. Plan builders should prefer vo_item_ids; if only vo_item_id is present, treat it as vo_item_ids: [vo_item_id]."
         },
         "vo_speaker_id": {
           "type": [
