@@ -63,6 +63,7 @@ def make_valid_asset_manifest() -> dict:
         "schema_version": "1.0.0",
         "manifest_id": "test-manifest-001",
         "project_id": "test-project",
+        "episode_id": "s01e01",
         "shotlist_ref": "test-shotlist-001",
         "character_packs": [],
         "backgrounds": [],

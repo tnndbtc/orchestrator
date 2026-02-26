@@ -90,11 +90,15 @@ def run(project_config: dict, run_id: str, registry: ArtifactRegistry) -> dict:
         for scene_id, description in seen_scenes.items()
     ]
 
+    # episode_id: read from ShotList if present (optional field), fall back to "s01e01"
+    episode_id: str = shotlist.get("episode_id") or "s01e01"
+
     manifest: dict = {
         "schema_id": "AssetManifest_draft",
         "schema_version": "1.0.0",
         "manifest_id": f"manifest-{project_id}-{run_id[:8]}",
         "project_id": project_id,
+        "episode_id": episode_id,
         "shotlist_ref": shotlist["shotlist_id"],
         "character_packs": character_packs,
         "backgrounds": backgrounds,

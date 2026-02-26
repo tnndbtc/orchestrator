@@ -132,10 +132,14 @@ def _discover_locales(run_dir: Path) -> list[str]:
 
     Returns a sorted list of locale strings, e.g. ``["zh-Hans"]``.
     The base file (no locale suffix) is never included.
+    Registry sidecar files (``*.meta.json``) are explicitly excluded.
     """
     locales: list[str] = []
     prefix = "AssetManifest_draft."
     for path in sorted(run_dir.glob("AssetManifest_draft.*.json")):
+        # Exclude registry sidecar files (e.g. AssetManifest_draft.meta.json)
+        if path.name.endswith(".meta.json"):
+            continue
         stem = path.stem  # e.g. "AssetManifest_draft.zh-Hans"
         if stem.startswith(prefix):
             locale = stem[len(prefix):]

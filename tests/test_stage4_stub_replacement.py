@@ -147,6 +147,7 @@ def _write_prereqs(registry: ArtifactRegistry, run_dir: Path) -> None:
             "schema_version": "1.0.0",
             "manifest_id": "mfst-stub-test",
             "project_id": "test-project",
+            "episode_id": "s01e01",
             "shotlist_ref": "sl-stub-test",
             "character_packs": [],
             "backgrounds": [],
