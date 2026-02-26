@@ -1,4 +1,8 @@
-"""ArtifactRegistry: filesystem-backed artifact store with schema validation."""
+"""ArtifactRegistry: filesystem-backed artifact store with schema validation.
+
+EpisodeRegistry: flat variant that maps all paths to a single episode directory,
+used by the ``--draft`` CLI mode (no project.json / no run_id nesting).
+"""
 
 import json
 from datetime import datetime, timezone
@@ -141,5 +145,45 @@ class ArtifactRegistry:
     ) -> None:
         """Write run_summary.json for this run."""
         path = self.base_dir / project_id / run_id / "run_summary.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+
+class EpisodeRegistry(ArtifactRegistry):
+    """Flat registry that resolves all artifact paths to a single episode directory.
+
+    Used by the ``orchestrator run --draft`` mode where the episode folder IS the
+    run directory.  The ``project_id`` and ``run_id`` arguments accepted by every
+    method are ignored — all paths resolve directly to ``episode_dir``.
+
+    Example layout::
+
+        projects/the-pharaoh-who-defied-death/episodes/s01e02/
+            AssetManifest_draft.json          ← input
+            AssetManifest_draft.zh-Hans.json  ← input (locale variant)
+            AssetManifest.media.json          ← input
+            AssetManifest.media.zh-Hans.json  ← input (locale variant)
+            ShotList.json                     ← input
+            AssetManifest_final.json          ← stage4 output
+            AssetManifest_final.zh-Hans.json  ← stage4 output (locale variant)
+            RenderPlan.json                   ← stage4 output
+    """
+
+    def __init__(self, episode_dir: Path) -> None:
+        self._episode_dir = Path(episode_dir)
+        # base_dir satisfies the parent class attribute; not used for path resolution.
+        self.base_dir = self._episode_dir
+
+    def run_dir(self, project_id: str, run_id: str) -> Path:  # noqa: ARG002
+        return self._episode_dir
+
+    def artifact_path(self, project_id: str, run_id: str, artifact_type: str) -> Path:  # noqa: ARG002
+        return self._episode_dir / f"{artifact_type}.json"
+
+    def meta_path(self, project_id: str, run_id: str, artifact_type: str) -> Path:  # noqa: ARG002
+        return self._episode_dir / f"{artifact_type}.meta.json"
+
+    def write_run_summary(self, project_id: str, run_id: str, summary: dict) -> None:  # noqa: ARG002
+        path = self._episode_dir / "run_summary.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(summary, indent=2), encoding="utf-8")

@@ -15,7 +15,7 @@ import click
 
 from .packager import package_episode
 from .pipeline import PipelineRunner
-from .registry import ArtifactRegistry
+from .registry import ArtifactRegistry, EpisodeRegistry
 from .utils.hashing import hash_artifact, hash_file_bytes
 
 
@@ -26,40 +26,51 @@ def cli() -> None:
 
 @cli.command("run")
 @click.option(
-    "--project",
-    required=True,
+    "--media",
+    default=None,
     type=click.Path(exists=True, dir_okay=False, readable=True),
-    help="Path to project.json",
+    help=(
+        "Path to AssetManifest.media.json (the file produced by the media agent). "
+        "Reads project_id from the file; auto-discovers locale variants, draft, and "
+        "shotlist from the same directory.  Runs Stage 4 only.  "
+        "Mutually exclusive with --project."
+    ),
+)
+@click.option(
+    "--project",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    help="Path to project.json (legacy full-pipeline mode).  Mutually exclusive with --media.",
 )
 @click.option(
     "--artifacts-dir",
     default="./artifacts",
     show_default=True,
-    help="Root directory for artifact storage",
+    help="Root directory for artifact storage (legacy --project mode only)",
 )
 @click.option(
     "--run-id",
     default=None,
-    help="Explicit run ID (default: SHA-256 hash of project config)",
+    help="Explicit run ID (legacy --project mode only; default: SHA-256 of project config)",
 )
 @click.option(
     "--force",
     is_flag=True,
     default=False,
-    help="Re-run all eligible stages even if artifacts already exist",
+    help="Overwrite existing RenderPlan.json if it already exists (--media mode only)",
 )
 @click.option(
     "--from-stage",
     default=1,
     type=click.IntRange(1, 5),
     show_default=True,
-    help="Start execution from stage N (1–5); earlier stages are skipped",
+    help="Start execution from stage N (1–5); earlier stages are skipped (--project mode only)",
 )
 @click.option(
     "--to-last-stage",
     is_flag=True,
     default=False,
-    help="When combined with --from-stage N, run all stages from N to the last stage",
+    help="When combined with --from-stage N, run all stages from N to the last (--project mode only)",
 )
 @click.option(
     "--stub",
@@ -73,7 +84,8 @@ def cli() -> None:
     ),
 )
 def run_command(
-    project: str,
+    media: str | None,
+    project: str | None,
     artifacts_dir: str,
     run_id: str | None,
     force: bool,
@@ -81,9 +93,121 @@ def run_command(
     to_last_stage: bool,
     stub: bool,
 ) -> None:
-    """Run the orchestrator pipeline for a project."""
-    project_path = Path(project).resolve()
-    project_config: dict = json.loads(project_path.read_text(encoding="utf-8"))
+    """Run the orchestrator pipeline for a project or episode.
+
+    \b
+    Media mode  (--media):   point at AssetManifest.media.json produced by the
+                             media agent; everything else auto-discovered from
+                             the same directory.  Runs Stage 4 only.
+    Project mode (--project): legacy full-pipeline mode using project.json.
+    """
+    if media and project:
+        raise click.UsageError("--media and --project are mutually exclusive.")
+    if not media and not project:
+        raise click.UsageError("One of --media or --project is required.")
+
+    # -------------------------------------------------------------------------
+    # Media mode: entry point is AssetManifest.media.json
+    # -------------------------------------------------------------------------
+    if media:
+        import importlib
+        import time
+        from datetime import datetime, timezone
+
+        media_path = Path(media).resolve()
+        episode_dir = media_path.parent
+        media_filename = media_path.name  # e.g. "AssetManifest.media.json" or "AssetManifest.media.zh-Hans.json"
+
+        # Extract locale from media filename, if any.
+        # "AssetManifest.media.json"         → None
+        # "AssetManifest.media.zh-Hans.json" → "zh-Hans"
+        _stem = media_path.stem  # strips .json suffix
+        _after = _stem[len("AssetManifest.media."):] if _stem.startswith("AssetManifest.media.") else ""
+        media_locale: str | None = _after if _after else None
+
+        media_data = json.loads(media_path.read_text(encoding="utf-8"))
+
+        # project_id from the media file (copied from source AssetManifest)
+        project_id: str = media_data.get("project_id", "unknown-project")
+
+        # Locate draft: when a locale-specific media file is given, prefer the
+        # matching locale draft; fall back to the base draft.
+        if media_locale:
+            _locale_draft = episode_dir / f"AssetManifest_draft.{media_locale}.json"
+            _base_draft   = episode_dir / "AssetManifest_draft.json"
+            if _locale_draft.exists():
+                draft_path = _locale_draft
+            elif _base_draft.exists():
+                draft_path = _base_draft
+            else:
+                raise click.UsageError(
+                    f"Neither AssetManifest_draft.{media_locale}.json nor "
+                    f"AssetManifest_draft.json found in {episode_dir}\n"
+                    "Stage 4 requires a draft manifest alongside the media manifest."
+                )
+        else:
+            draft_path = episode_dir / "AssetManifest_draft.json"
+            if not draft_path.exists():
+                raise click.UsageError(
+                    f"AssetManifest_draft.json not found in {episode_dir}\n"
+                    "Stage 4 requires the draft alongside the media manifest."
+                )
+        draft_data = json.loads(draft_path.read_text(encoding="utf-8"))
+        episode_id: str = draft_data.get("episode_id", episode_dir.name)
+
+        click.echo(f"▶  Media mode")
+        click.echo(f"   Project : {project_id}")
+        click.echo(f"   Episode : {episode_id}")
+        click.echo(f"   Dir     : {episode_dir}")
+        if media_locale:
+            click.echo(f"   Locale  : {media_locale}")
+        click.echo()
+
+        registry = EpisodeRegistry(episode_dir)
+        # Pass the actual media filename so stage4 uses it as the base
+        # (rather than assuming "AssetManifest.media.json").
+        project_config = {"id": project_id, "_media_file": media_filename}
+
+        # Check if outputs already exist and --force not set
+        render_plan_path = episode_dir / "RenderPlan.json"
+        if render_plan_path.exists() and not force:
+            click.echo("ℹ  RenderPlan.json already exists — skipping (use --force to overwrite).")
+            click.echo(f"   {render_plan_path}")
+            return
+
+        stage4 = importlib.import_module(
+            ".stages.stage4_build_renderplan", package="orchestrator"
+        )
+
+        t0 = time.monotonic()
+        try:
+            render_plan = stage4.run(project_config, episode_id, registry)
+        except Exception as exc:
+            click.echo(f"❌  Stage 4 FAILED: {type(exc).__name__}: {exc}", err=True)
+            sys.exit(1)
+        duration = time.monotonic() - t0
+
+        # Report outputs
+        click.echo(f"  ✓  stage4_build_renderplan   ({duration:.3f}s)")
+        click.echo()
+        click.echo(f"✅  Stage 4 completed")
+        click.echo(f"   AssetManifest_final.json → {episode_dir / 'AssetManifest_final.json'}")
+
+        for path in sorted(episode_dir.glob("AssetManifest_final.*.json")):
+            click.echo(f"   {path.name:<40} → {path}")
+
+        click.echo(f"   RenderPlan.json            → {episode_dir / 'RenderPlan.json'}")
+
+        if "locale_tracks" in render_plan:
+            tracks = render_plan["locale_tracks"]
+            click.echo(f"   locale_tracks              : {list(tracks.keys())}")
+        return
+
+    # -------------------------------------------------------------------------
+    # Legacy project mode: full pipeline via PipelineRunner (--project)
+    # -------------------------------------------------------------------------
+    project_path = Path(project).resolve()  # type: ignore[arg-type]
+    project_config = json.loads(project_path.read_text(encoding="utf-8"))
 
     registry = ArtifactRegistry(artifacts_dir)
     runner = PipelineRunner(
